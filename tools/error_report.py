@@ -104,7 +104,9 @@ def collect(path):
 
         # расхождение периодов и итога
         sh, sa = period_sums(g)
-        if g["goals1"] is not None and sh is not None and (sh, sa) != (g["goals1"], g["goals2"]):
+        # при пустых периодах расхождение уже описано отдельной находкой
+        if (g["goals1"] is not None and sh is not None and g["periods_raw"]
+                and (sh, sa) != (g["goals1"], g["goals2"])):
             tie_plus_one = sh == sa and (g["goals1"] - sh) + (g["goals2"] - sa) == 1
             if g["shootout"] or g["overtime"]:
                 if not tie_plus_one:
