@@ -30,6 +30,8 @@ LABELS = {
 VALUE_ON_NEXT_ROW = {"roster1", "roster2", "secretary", "judge"}
 # Поля, занимающие несколько столбцов
 MULTI_COLUMN = {"roster1", "roster2", "periods"}
+# Поля, у которых правее значения могут стоять пометки (напр. «Б Буллиты»)
+WITH_NOTES = {"final"}
 
 SCORE_SEPARATORS = ("*", ":", "-", "–", "—", "х", "x")
 
@@ -154,6 +156,11 @@ def read_sheet(ws):
                 game[key] = [v for v in vals if v]
             else:
                 game[key] = ws.cell(row=value_row, column=FIRST_COL).value
+                if key in WITH_NOTES:
+                    # правее значения могут стоять пометки об исходе матча
+                    notes = [norm(ws.cell(row=value_row, column=c).value)
+                             for c in range(FIRST_COL + 1, last_col + 1)]
+                    game[key + "_notes"] = [n for n in notes if n]
 
         # нормализация
         game["comp"] = norm(game.get("comp"))
@@ -164,7 +171,10 @@ def read_sheet(ws):
         game["secretary"] = norm(game.get("secretary"))
         game["judge"] = norm(game.get("judge"))
         game["final_raw"] = norm(game.get("final"))
+        game["final_notes"] = game.get("final_notes") or []
         game["goals1"], game["goals2"] = parse_score(game["final_raw"])
+        game["shootout"] = any("буллит" in n.lower() for n in game["final_notes"])
+        game["overtime"] = any("оверта" in n.lower() for n in game["final_notes"])
         game["periods_raw"] = game.get("periods") or []
         game["roster1"] = [parse_player(p) for p in (game.get("roster1") or [])]
         game["roster2"] = [parse_player(p) for p in (game.get("roster2") or [])]

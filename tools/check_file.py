@@ -94,23 +94,42 @@ def main(path):
         notes.append(f"в {len(mixed)} матчах разделитель итога отличается от периодов")
         say(f"   РАЗНЫЙ разделитель итога и периодов: {len(mixed)} матчей")
 
-    mism, ot_like = [], []
+    marks = Counter(n for g in games for n in g["final_notes"])
+    say(f"   пометки у итогового счёта: {dict(marks) if marks else 'нет'}")
+    say(f"   матчей с пометкой «буллиты»: {sum(1 for g in games if g['shootout'])}")
+
+    explained, no_mark, unexplained = [], [], []
     for g in games:
         if g["goals1"] is None or any(parse_score(p)[0] is None for p in g["periods_raw"]):
             continue
         sh = sum(parse_score(p)[0] for p in g["periods_raw"])
         sa = sum(parse_score(p)[1] for p in g["periods_raw"])
-        if (sh, sa) != (g["goals1"], g["goals2"]):
-            mism.append((g, sh, sa))
-            if sh == sa and (g["goals1"] - sh) + (g["goals2"] - sa) == 1:
-                ot_like.append(g)
-            warn(g, f"сумма периодов {sh}:{sa} != итог {g['final_raw']}")
-    say(f"   сумма периодов != итог: {len(mism)} матчей")
-    say(f"      из них после 3 периодов ничья и +1 гол (похоже на овертайм): {len(ot_like)}")
-    for g, sh, sa in mism:
-        if g not in ot_like:
-            say(f"      НЕ объясняется овертаймом: стр.{g['row']} {g['date']} {g['time']} "
-                f"{g['team1']} — {g['team2']}: периоды {sh}:{sa}, итог {g['final_raw']}")
+        if (sh, sa) == (g["goals1"], g["goals2"]):
+            continue
+        # победа по буллитам: после основного времени ничья, в итоге +1 гол
+        tie_plus_one = sh == sa and (g["goals1"] - sh) + (g["goals2"] - sa) == 1
+        if g["shootout"] or g["overtime"]:
+            explained.append((g, sh, sa))
+            if not tie_plus_one:
+                warn(g, f"пометка «{' '.join(g['final_notes'])}», но картина счёта "
+                        f"не похожа на буллиты: периоды {sh}:{sa}, итог {g['final_raw']}")
+        elif tie_plus_one:
+            no_mark.append((g, sh, sa))
+            warn(g, f"похоже на буллиты, но пометки нет: периоды {sh}:{sa}, итог {g['final_raw']}")
+        else:
+            unexplained.append((g, sh, sa))
+            err(g, f"сумма периодов {sh}:{sa} != итог {g['final_raw']} и это не буллиты")
+
+    say(f"   сумма периодов != итог: {len(explained) + len(no_mark) + len(unexplained)} матчей")
+    say(f"      объясняется пометкой «буллиты»: {len(explained)} — это не ошибка")
+    say(f"      похоже на буллиты, но пометка отсутствует: {len(no_mark)}")
+    for g, sh, sa in no_mark:
+        say(f"         стр.{g['row']} {g['date']} {g['time']} {g['team1']} — {g['team2']}: "
+            f"периоды {sh}:{sa}, итог {g['final_raw']}")
+    say(f"      ничем не объясняется: {len(unexplained)}")
+    for g, sh, sa in unexplained:
+        say(f"         стр.{g['row']} {g['date']} {g['time']} {g['team1']} — {g['team2']}: "
+            f"периоды {sh}:{sa}, итог {g['final_raw']}")
     gs = [(g["goals1"], g["goals2"]) for g in games if g["goals1"] is not None]
     if gs:
         say(f"   голов за матч: {min(a+b for a,b in gs)}..{max(a+b for a,b in gs)}, "
