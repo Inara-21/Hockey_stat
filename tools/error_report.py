@@ -19,7 +19,7 @@ import openpyxl
 from hockey_data import read_workbook, parse_score
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIR = os.path.join(ROOT, "data", "new")
+SRC_DIR = os.path.join(ROOT, "data", "source")
 OUT = os.path.join(ROOT, "reports", "Otchet_ob_oshibkah.txt")
 
 REQUIRED = ["comp", "date", "time", "team1", "team2", "roster1", "roster2",
@@ -30,6 +30,9 @@ LABEL_RU = {"comp": "Название соревнования", "date": "Дат
             "final": "Итоговый счёт матча", "periods": "Счёт по периодам"}
 
 ERROR, QUESTION = "ОШИБКА", "ВОПРОС"
+
+MONTHS = {1: "январь", 2: "февраль", 3: "март", 4: "апрель", 5: "май", 6: "июнь",
+          7: "июль", 8: "август", 9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь"}
 
 
 def period_sums(g):
@@ -59,10 +62,10 @@ def collect(path):
             add(ERROR, g, "пустое соревнование", "Не указано название соревнования.")
         if g["date"] is None:
             add(ERROR, g, "дата не разобрана",
-                f"Дату не удалось прочитать (записана как «{g['date_kind']}»).")
+                f"Дата не читается (записана как «{g['date_kind']}»).")
         if g["time"] is None:
             add(ERROR, g, "время не разобрано",
-                f"Время не удалось прочитать (записано как «{g['time_kind']}»).")
+                f"Время не читается (записано как «{g['time_kind']}»).")
         if not g["team1"] or not g["team2"]:
             add(ERROR, g, "пустая команда",
                 f"Не заполнено название команды: «{g['team1']}» — «{g['team2']}».")
@@ -74,21 +77,21 @@ def collect(path):
                 f"Состав не заполнен: команда А — {len(g['roster1'])} игроков, "
                 f"команда В — {len(g['roster2'])}.")
         if not g["judge"]:
-            add(QUESTION, g, "нет судьи", "Судья не указан. Просьба дополнить.")
+            add(QUESTION, g, "нет судьи", "Судья не указан.")
         if not g["secretary"]:
-            add(QUESTION, g, "нет секретаря", "Секретарь не указан. Просьба дополнить.")
+            add(QUESTION, g, "нет секретаря", "Секретарь не указан.")
 
         if not g["final_raw"]:
             add(ERROR, g, "пустой итоговый счёт", "Итоговый счёт не заполнен.")
         elif g["goals1"] is None:
             add(ERROR, g, "итог не разобран",
-                f"Итоговый счёт «{g['final_raw']}» записан так, что его не удалось прочитать.")
+                f"Итоговый счёт «{g['final_raw']}» не читается.")
         if not g["periods_raw"]:
             add(ERROR, g, "пустые периоды", "Счёт по периодам не заполнен.")
         for p in g["periods_raw"]:
             if parse_score(p)[0] is None:
                 add(ERROR, g, "период не разобран",
-                    f"Счёт периода «{p}» записан так, что его не удалось прочитать.")
+                    f"Счёт периода «{p}» не читается.")
 
         # расхождение периодов и итога
         sh, sa = period_sums(g)
@@ -97,20 +100,16 @@ def collect(path):
             if g["shootout"] or g["overtime"]:
                 if not tie_plus_one:
                     add(QUESTION, g, "пометка не соответствует счёту",
-                        f"Стоит пометка «{' '.join(g['final_notes'])}», но после основного "
-                        f"времени ничьей не было: по периодам {sh}:{sa}, в итоге "
-                        f"{g['goals1']}:{g['goals2']}. Просьба уточнить.")
+                        f"Стоит пометка «{' '.join(g['final_notes'])}», но ничьей после "
+                        f"основного времени не было.")
             elif tie_plus_one:
                 add(QUESTION, g, "похоже на буллиты, но пометки нет",
-                    "После трёх периодов ничья, а в итоге на один гол больше. Так записаны "
-                    "матчи, выигранные по буллитам, но пометки «Б Буллиты» у этого матча нет.\n"
-                    "   Это победа по буллитам и пометку пропустили, или в счёте опечатка? "
-                    "Просьба уточнить.")
+                    "После трёх периодов ничья, в итоге +1 гол — как у матчей с буллитами, "
+                    "но пометки «Б Буллиты» нет. Буллиты или опечатка?")
             else:
                 add(ERROR, g, "счёт не сходится с периодами",
-                    "Счёт не сходится со счётом по периодам. Ничьей после трёх периодов не "
-                    "было, поэтому буллитами это не объясняется: в итоге есть гол, которого "
-                    "нет ни в одном периоде.\n   Просьба сверить с протоколом матча.")
+                    f"Итог {g['goals1']}:{g['goals2']}, сумма периодов {sh}:{sa}. Ничьей после "
+                    f"трёх периодов не было — буллитами не объясняется.")
 
         for who, roster in (("А", g["roster1"]), ("В", g["roster2"])):
             nums = [n for n, _ in roster]
@@ -163,12 +162,12 @@ def collect(path):
         if len(teams) > 1:
             add(QUESTION, None, "игрок в разных командах",
                 f"«{nm}» указан в составах разных команд: "
-                f"{', '.join(f'{t} ({c} матчей)' for t, c in teams.items())}. Просьба уточнить.")
+                f"{', '.join(f'{t} ({c} матчей)' for t, c in teams.items())}.")
     for nm, nums in pnum.items():
         if len(nums) > 1:
             add(QUESTION, None, "игрок с разными номерами",
                 f"У «{nm}» в разных матчах разные номера: "
-                f"{', '.join(f'№{n} ({c} раз)' for n, c in nums.items())}. Просьба уточнить.")
+                f"{', '.join(f'№{n} ({c} раз)' for n, c in nums.items())}.")
 
     names = sorted({g["team1"] for g in games} | {g["team2"] for g in games})
     for i, a in enumerate(names):
@@ -177,23 +176,22 @@ def collect(path):
                 add(QUESTION, None, "похожие названия команд",
                     f"Названия «{a}» и «{b}» очень похожи — возможна опечатка.")
 
+    # Плотность календаря (сколько матчей в день, пустые дни) не проверяем:
+    # расписание — не наша зона ответственности.
     byday = Counter(g["date"] for g in games if g["date"])
-    if byday:
-        avg = sum(byday.values()) / len(byday)
-        for d in sorted(byday):
-            if byday[d] < avg / 2:
-                add(QUESTION, None, "мало матчей в день",
-                    f"{d.strftime('%d.%m.%Y')}: всего {byday[d]} матч(а), "
-                    f"в среднем по другим дням {avg:.1f}. Возможно, данные неполные.")
-        days = sorted(byday)
-        for n in range((days[-1] - days[0]).days + 1):
-            d = days[0] + datetime.timedelta(n)
-            if d not in byday:
-                add(QUESTION, None, "день без матчей",
-                    f"{d.strftime('%d.%m.%Y')}: матчей нет, хотя это середина периода.")
+
+    # разбивка для сводной таблицы: соревнование + месяц -> число матчей
+    breakdown = Counter()
+    undated = 0
+    for g in games:
+        if g["date"]:
+            breakdown[(g["comp"], g["date"].year, g["date"].month)] += 1
+        else:
+            undated += 1
 
     wb = openpyxl.load_workbook(path)
     summary = dict(
+        breakdown=breakdown, undated=undated,
         file=fname, games=len(games), skipped=skipped,
         sheets=dict(Counter(g["sheet"] for g in games)),
         comps=dict(Counter(g["comp"] for g in games)),
@@ -234,6 +232,8 @@ def render(all_summaries, all_problems, path):
             say(f"     период: {s['dates'][0].strftime('%d.%m.%Y')} — "
                 f"{s['dates'][1].strftime('%d.%m.%Y')}, дней с матчами: {s['days']}")
         say(f"     составы (А, В): {s['rosters']}")
+        for (comp, y, m), n in sorted(s["breakdown"].items()):
+            say(f"     {MONTHS[m]} {y}: {n} матчей")
         say(f"     победы по буллитам: {s['shootouts']}")
         if s["skipped"]:
             say(f"     листы без матчей (пропущены): "
@@ -286,9 +286,32 @@ def render(all_summaries, all_problems, path):
             say("")
             say(f"   {p['kind']}: {p['text']}")
 
+    # ---------- сводная таблица
+    total = Counter()
+    for s in all_summaries:
+        total.update(s["breakdown"])
+
     say("")
     say("=" * 78)
-    say(f"ИТОГО: ошибок — {len(errors)}, вопросов — {len(questions)}")
+    say("СВОДНАЯ ТАБЛИЦА")
+    say("=" * 78)
+    say("")
+    if total:
+        wcomp = max(30, max(len(c) for c, _, _ in total))
+        say(f"  {'Соревнование':<{wcomp}}  {'Месяц':<16}  {'Игр':>6}")
+        say(f"  {'-' * wcomp}  {'-' * 16}  {'-' * 6}")
+        for (comp, y, m), n in sorted(total.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
+            say(f"  {comp:<{wcomp}}  {MONTHS[m] + ' ' + str(y):<16}  {n:>6}")
+        say(f"  {'-' * wcomp}  {'-' * 16}  {'-' * 6}")
+        say(f"  {'ИТОГО':<{wcomp}}  {'':<16}  {sum(total.values()):>6}")
+    undated = sum(s["undated"] for s in all_summaries)
+    if undated:
+        say(f"\n  матчей без разобранной даты (в таблицу не вошли): {undated}")
+
+    say("")
+    say("=" * 78)
+    say(f"ИТОГО: матчей — {sum(s['games'] for s in all_summaries)}, "
+        f"ошибок — {len(errors)}, вопросов — {len(questions)}")
     say("=" * 78)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
