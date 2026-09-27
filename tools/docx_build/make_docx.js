@@ -136,8 +136,8 @@ children.push(new Table({ columnWidths: SW, width: { size: SW.reduce((a, b) => a
 // ---------------------------------------------------------------- по файлам
 children.push(H1("Подробно по каждому файлу"));
 children.push(p([t("Последняя колонка — для ответа организаторов. ", { pt: 10, b: true }),
-                 t("Напротив каждой строки впишите, как исправляем ошибку или почему "
-                   + "данные верны как есть.", { pt: 10 })], { after: 160 }));
+                 t("Напротив каждой строки впишите, как исправляем ошибку.", { pt: 10 })],
+                { after: 160 }));
 
 const FW = [800, 2500, 2200, 4400, CONTENT_W - 9900];
 data.blocks.forEach(b => {
@@ -155,7 +155,7 @@ data.blocks.forEach(b => {
     cell(p(t("Счёт", { b: true, pt: 9 }), { after: 0 }), { w: FW[2], bg: HEAD_BG }),
     cell(p(t("Что не так", { b: true, pt: 9 }), { after: 0 }), { w: FW[3], bg: HEAD_BG }),
     cell([p(t("Решение организатора", { b: true, pt: 9 }), { after: 20 }),
-          p(t("как исправляем или почему верно как есть", { pt: 7, i: true, color: MUTED }), { after: 0 })],
+          p(t("как исправляем", { pt: 7, i: true, color: MUTED }), { after: 0 })],
          { w: FW[4], bg: HEAD_BG }),
   ]})];
   b.findings.forEach((f, i) => {
