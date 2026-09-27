@@ -177,10 +177,11 @@ def collect(path):
             alien = Counter(home[nm] for _, nm in roster if home.get(nm) not in (None, team))
             if alien and sum(alien.values()) * 2 >= len(roster):
                 other, cnt = alien.most_common(1)[0]
-                add(ERROR, g, "состав заполнен игроками другой команды",
+                add(ERROR, g, "состав из игроков другой команды",
                     f"В составе команды {'А' if side == 1 else 'В'} ({team}) "
-                    f"{cnt} из {len(roster)} игроков — из команды «{other}». "
-                    f"Похоже, состав скопирован не от той команды.")
+                    f"{cnt} из {len(roster)} игроков в других матчах выступают "
+                    f"за «{other}». Это заявленный на матч состав или состав "
+                    f"скопирован не от той команды?")
                 for _, nm in roster:
                     if home.get(nm) == other:
                         swapped_rosters.add(nm)
@@ -190,7 +191,8 @@ def collect(path):
             add(ERROR, None, "игрок в разных командах",
                 f"«{nm}» выходит за разные команды: "
                 f"{', '.join(f'{t} ({c})' for t, c in teams.most_common())}. "
-                f"Так и есть или ошибка в составе?")
+                f"Если переходы между командами допускаются — вопрос снимается, "
+                f"иначе ошибка в составе.")
     for nm, nums in pnum.items():
         if len(nums) > 1:
             add(QUESTION, None, "игрок с разными номерами",
