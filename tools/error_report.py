@@ -51,6 +51,15 @@ def collect(path):
     def add(kind, game, what, text):
         problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text))
 
+    # Повторяющиеся дефекты состава копим и выводим одной записью со списком
+    # матчей: иначе одна и та же проблема размножается на десятки находок.
+    no_number = defaultdict(list)
+    dup_numbers = defaultdict(list)
+
+    def rows_text(rows):
+        shown = ", ".join(f"стр. {r}" for r in rows[:8])
+        return shown + (f" и ещё {len(rows) - 8}" if len(rows) > 8 else "")
+
     # ---------- по каждому матчу
     for g in games:
         for f in REQUIRED:
@@ -115,20 +124,27 @@ def collect(path):
                     "Счёт не сходится с суммой по периодам. Ничьей после трёх периодов "
                     "не было — буллитами не объясняется.")
 
-        for who, roster in (("А", g["roster1"]), ("В", g["roster2"])):
+        for team, roster in ((g["team1"], g["roster1"]), (g["team2"], g["roster2"])):
             nums = [n for n, _ in roster]
             for n, c in Counter(nums).items():
                 if c > 1 and n:
-                    who_n = [nm for nu, nm in roster if nu == n]
-                    add(ERROR, g, "повтор игрового номера",
-                        f"В составе команды {who} номер №{n} у двух игроков: {', '.join(who_n)}.")
+                    who_n = tuple(sorted(nm for nu, nm in roster if nu == n))
+                    dup_numbers[(team, n, who_n)].append(g["row"])
             for n, nm in roster:
                 if not nm:
                     add(ERROR, g, "игрок без ФИО",
-                        f"В составе команды {who} есть номер №{n} без фамилии.")
+                        f"В составе «{team}» есть номер №{n} без фамилии.")
                 elif not n:
-                    add(QUESTION, g, "игрок без номера",
-                        f"В составе команды {who} у игрока «{nm}» не указан номер.")
+                    no_number[(team, nm)].append(g["row"])
+
+    for (team, nm), rows in sorted(no_number.items()):
+        add(ERROR, None, "игрок без номера",
+            f"У «{nm}» («{team}») не указан игровой номер — в {len(rows)} матчах: "
+            f"{rows_text(rows)}.")
+    for (team, n, who_n), rows in sorted(dup_numbers.items()):
+        add(ERROR, None, "повтор игрового номера",
+            f"В составе «{team}» номер №{n} у двух игроков: {', '.join(who_n)} — "
+            f"в {len(rows)} матчах: {rows_text(rows)}.")
 
     # ---------- по файлу целиком
     key = lambda g: (g["comp"], str(g["date"]), g["time"], g["team1"], g["team2"])
