@@ -272,6 +272,27 @@ def collect(path):
             f"У {len(renumbered)} игроков в разных матчах разные игровые номера: "
             f"{lines_n}. Номер меняется вместе с командой или это ошибка?")
 
+    # Команда, у которой матчей на порядок меньше, чем у остальных, — скорее
+    # всего чужое или неверно указанное название.
+    team_games = Counter()
+    team_rows = defaultdict(list)
+    for g in games:
+        for team in (g["team1"], g["team2"]):
+            if team:
+                team_games[team] += 1
+                team_rows[team].append(g["row"])
+    if len(team_games) > 2:
+        counts = sorted(team_games.values())
+        median = counts[len(counts) // 2]
+        rare = [(t, c) for t, c in sorted(team_games.items()) if c * 10 < median]
+        if rare:
+            listed = "; ".join(
+                f"«{t}» — {c} матч(а): {rows_text(sorted(team_rows[t]))}" for t, c in rare)
+            add(ERROR, None, "команда встречается в единичных матчах",
+                f"У остальных команд файла порядка {median} матчей, а здесь: {listed}. "
+                f"Похоже, название команды указано неверно или матчи из другого "
+                f"соревнования попали в файл.")
+
     names = sorted({g["team1"] for g in games} | {g["team2"] for g in games})
     for i, a in enumerate(names):
         for b in names[i + 1:]:
