@@ -1,147 +1,42 @@
 # -*- coding: utf-8 -*-
-"""Генератор хоккейных протоколов игрового дня: data/games.xlsx -> reports/*.pdf
+"""Протоколы игровых дней: исходная таблица -> PDF.
 
-Принцип: данные читаются ПО ПОЗИЦИИ (жёсткий блок 15 строк на игру) и переносятся
-в PDF без изменений. Подписи в левом столбце используются только для контроля
-(в исходнике встречаются опечатки), но не влияют на разбор.
+Данные переносятся как есть. Ничего не пересчитывается и не исправляется:
+спорные места выносятся в отдельный отчёт «Вопросы и ошибки».
 
-Запуск:  python3 tools/build_reports.py
+Запуск:  python3 tools/build_reports.py data/new/div1.xlsx
 """
-import openpyxl, html, subprocess, os, sys, shutil
-from collections import defaultdict, Counter
+import base64, html, os, subprocess, sys
+from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from hockey_data import read_workbook, parse_score, score_text, winner
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-XLSX = os.path.join(ROOT, "data", "games.xlsx")
 OUT = os.path.join(ROOT, "reports")
 CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
+LOGO = os.path.join(ROOT, "assets", "logo_rhl.png")
 
-ROWS_PER_GAME = 15          # жёсткая сетка блока одной игры
-CARDS_PER_SHEET = 4         # карточек игр на листе А4 (2 x 2)
-MAX_PLAYERS = 7             # строк в таблице состава
+LEAGUE_TITLE = "Чемпионат Регулярной хоккейной лиги 3х3"
+CARDS_PER_SHEET = 4
+MONTHS = {1: "январь", 2: "февраль", 3: "март", 4: "апрель", 5: "май", 6: "июнь",
+          7: "июль", 8: "август", 9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь"}
 
-# смещения строк внутри блока игры (0-based от первой строки блока)
-# Строки ЗНАЧЕНИЙ (откуда читаем данные)
-OFF_COMP, OFF_DATE, OFF_TIME, OFF_T1, OFF_T2 = 0, 1, 2, 3, 4
-OFF_ROSTER1, OFF_ROSTER2 = 6, 8
-OFF_SECRETARY, OFF_JUDGE = 10, 12
-OFF_FINAL, OFF_PERIODS = 13, 14
-
-# Строки ПОДПИСЕЙ в левом столбце. У составов, секретарей и судей подпись стоит
-# на строку ВЫШЕ своих значений, поэтому смещения тут другие.
-EXPECTED_LABELS = {
-    0: "Название соревнования", 1: "Дата", 2: "Время начала матча",
-    3: "Команда 1", 4: "Команда2",
-    5: "Состав команды 1", 7: "Состав команды 2",
-    9: "Секретари", 11: "Судьи",
-    13: "Итоговый счёт матча", 14: "Счёт по периодам",
-}
-
-# ---------------------------------------------------------------- чтение
-def raw(ws, r, c):
-    return ws.cell(row=r, column=c).value
-
-def txt(ws, r, c):
-    v = raw(ws, r, c)
-    return "" if v is None else str(v).strip()
-
-def parse_player(s):
-    """'Мажоров Владислав Владимирович №1' -> ('1', 'Мажоров Владислав Владимирович').
-    Терпимо к слитному написанию 'Игоревич№15'."""
-    if not s:
-        return ("", "")
-    if "№" in s:
-        name, num = s.rsplit("№", 1)
-        return (num.strip(), name.strip())
-    return ("", s.strip())
-
-def parse_score(s):
-    """'3*5' -> (3, 5, '3 : 5'). Числа не меняются, меняется только разделитель."""
-    s = (s or "").strip()
-    for sep in ("*", ":", "-"):
-        if sep in s:
-            a, b = s.split(sep, 1)
-            a, b = a.strip(), b.strip()
-            try:
-                return (int(a), int(b), f"{a} : {b}")
-            except ValueError:
-                return (None, None, s)
-    return (None, None, s)
-
-def fmt_date(v):
-    try:
-        return v.strftime("%d.%m.%Y")
-    except Exception:
-        return str(v)[:10]
-
-def fmt_time(v):
-    try:
-        return v.strftime("%H:%M")
-    except Exception:
-        return str(v)[:5]
-
-def read_games(path):
-    """Читает все игры. Возвращает (games, label_warnings)."""
-    wb = openpyxl.load_workbook(path, data_only=True)
-    games, label_warnings = [], []
-    for ws in wb.worksheets:
-        if ws.max_row % ROWS_PER_GAME != 0:
-            raise SystemExit(
-                f"ОШИБКА: лист '{ws.title}': {ws.max_row} строк не делится на {ROWS_PER_GAME}. "
-                "Структура блоков нарушена — разбор остановлен.")
-        for i in range(ws.max_row // ROWS_PER_GAME):
-            base = i * ROWS_PER_GAME + 1
-            # контроль подписей (не влияет на разбор, только предупреждения)
-            for off, expected in EXPECTED_LABELS.items():
-                got = txt(ws, base + off, 1)
-                if got != expected:
-                    label_warnings.append(
-                        dict(sheet=ws.title, game=i + 1, row=base + off,
-                             expected=expected, got=got))
-            final_raw = txt(ws, base + OFF_FINAL, 2)
-            fh, fa, final_disp = parse_score(final_raw)
-            t1, t2 = txt(ws, base + OFF_T1, 2), txt(ws, base + OFF_T2, 2)
-            periods_raw = [txt(ws, base + OFF_PERIODS, c)
-                           for c in range(2, 9) if txt(ws, base + OFF_PERIODS, c)]
-            reg, ot = periods_raw[:3], periods_raw[3:]
-            if fh is None or fa is None:
-                winner = ""
-            elif fh > fa:
-                winner = t1
-            elif fa > fh:
-                winner = t2
-            else:
-                winner = "ничья"
-            date_v = raw(ws, base + OFF_DATE, 2)
-            games.append(dict(
-                sheet=ws.title, index=i + 1, row=base,
-                comp=txt(ws, base + OFF_COMP, 2),
-                date=fmt_date(date_v), date_key=str(date_v)[:10],
-                time=fmt_time(raw(ws, base + OFF_TIME, 2)),
-                t1=t1, t2=t2,
-                roster1=[parse_player(txt(ws, base + OFF_ROSTER1, c))
-                         for c in range(2, 9) if txt(ws, base + OFF_ROSTER1, c)],
-                roster2=[parse_player(txt(ws, base + OFF_ROSTER2, c))
-                         for c in range(2, 9) if txt(ws, base + OFF_ROSTER2, c)],
-                secretary=txt(ws, base + OFF_SECRETARY, 2),
-                judge=txt(ws, base + OFF_JUDGE, 2),
-                final_raw=final_raw, final=final_disp, fh=fh, fa=fa, winner=winner,
-                periods_raw=periods_raw,
-                reg=", ".join(parse_score(p)[2] for p in reg),
-                ot=", ".join(parse_score(p)[2] for p in ot),
-            ))
-    return games, label_warnings
-
-# ---------------------------------------------------------------- вёрстка
 CSS = '''
 * { box-sizing: border-box; }
 @page { size: A4; margin: 21mm 14mm 14mm 14mm; }
 body { font-family:"DejaVu Sans","Liberation Sans",sans-serif; color:#1a1f36; margin:0; font-size:9.5px; }
 .sheet { page-break-after: always; }
 .sheet:last-child { page-break-after: auto; }
-.head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8mm; }
-.head .logo { font-weight:800; font-size:16px; letter-spacing:1px; color:#2b2f77; }
-.head .title { font-weight:800; font-size:17px; letter-spacing:1px; }
-.head .date { font-weight:800; font-size:15px; }
+.head { display:block; margin-bottom:7mm; }
+.head .league { font-weight:800; font-size:19px; letter-spacing:1.1px; text-transform:uppercase;
+                color:#2b2f77; text-align:center; line-height:1.15; margin-bottom:4.5mm; }
+.head .subhead { display:flex; align-items:center; }
+.head .subhead .side { flex:1 1 0; display:flex; align-items:center; }
+.head .subhead .side.right { justify-content:flex-end; }
+.head img.logo { height:13mm; width:auto; display:block; }
+.head .title { flex:0 0 auto; font-weight:800; font-size:14px; letter-spacing:1px; }
+.head .date { font-weight:800; font-size:14px; white-space:nowrap; }
 .grid { display:grid; grid-template-columns:1fr 1fr; gap:7mm; }
 .card { border:1.3px solid #3a3f6b; border-radius:9px; padding:4.5mm 5mm; }
 .fld { display:flex; align-items:baseline; gap:5px; border-bottom:1px solid #b9bdd6;
@@ -151,6 +46,8 @@ body { font-family:"DejaVu Sans","Liberation Sans",sans-serif; color:#1a1f36; ma
 .row2 { display:grid; grid-template-columns:1fr 1fr; gap:5mm; margin-bottom:2.2mm; }
 .lb { font-weight:800; font-size:8px; letter-spacing:.4px; white-space:nowrap; color:#2b2f4c; }
 .vl { font-style:italic; color:#1a1f36; }
+.mark { font-style:normal; font-weight:800; font-size:8px; letter-spacing:.5px;
+        color:#2b2f77; margin-left:4px; white-space:nowrap; }
 .rosters { display:grid; grid-template-columns:1fr 1fr; gap:5mm; margin:2.6mm 0; }
 table.ros { width:100%; border-collapse:collapse; }
 table.ros th, table.ros td { border:1px solid #b9bdd6; padding:1.8px 4px; font-size:8.3px; }
@@ -163,113 +60,179 @@ table.ros td.pl { font-style:italic; }
 .off-v { font-style:italic; border-bottom:1px solid #b9bdd6; padding-bottom:3px; }
 '''
 
+
 def e(x):
     return html.escape(str(x))
 
-def roster_table(roster):
+
+def logo_b64():
+    with open(LOGO, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+def roster_table(roster, slots):
     rows = ""
-    for i in range(MAX_PLAYERS):
+    for i in range(slots):
         num, name = roster[i] if i < len(roster) else ("", "")
         rows += f'<tr><td class="num">{e(num)}</td><td class="pl">{e(name)}</td></tr>'
     return ('<table class="ros"><tr><th class="num">№</th><th class="pl">ИГРОК</th></tr>'
             + rows + '</table>')
 
-def card_html(g):
+
+def card_html(g, slots):
+    mark = '<span class="mark">БУЛЛИТЫ</span>' if g["shootout"] else ""
+    periods = ", ".join(score_text(p) for p in g["periods_raw"])
     return f'''<div class="card">
   <div class="fld wide"><span class="lb">СОРЕВНОВАНИЕ</span><span class="vl">{e(g["comp"])}</span></div>
   <div class="row2">
-    <div class="fld"><span class="lb">ДАТА</span><span class="vl">{e(g["date"])}</span></div>
+    <div class="fld"><span class="lb">ДАТА</span><span class="vl">{e(g["date"].strftime("%d.%m.%Y"))}</span></div>
     <div class="fld"><span class="lb">ВРЕМЯ</span><span class="vl">{e(g["time"])}</span></div>
   </div>
   <div class="row2">
-    <div class="fld"><span class="lb">КОМАНДА&nbsp;А</span><span class="vl">{e(g["t1"])}</span></div>
-    <div class="fld"><span class="lb">КОМАНДА&nbsp;В</span><span class="vl">{e(g["t2"])}</span></div>
+    <div class="fld"><span class="lb">КОМАНДА&nbsp;А</span><span class="vl">{e(g["team1"])}</span></div>
+    <div class="fld"><span class="lb">КОМАНДА&nbsp;В</span><span class="vl">{e(g["team2"])}</span></div>
   </div>
-  <div class="rosters">{roster_table(g["roster1"])}{roster_table(g["roster2"])}</div>
+  <div class="rosters">{roster_table(g["roster1"], slots)}{roster_table(g["roster2"], slots)}</div>
   <div class="row2">
-    <div class="fld"><span class="lb">ИТОГОВЫЙ&nbsp;СЧЁТ</span><span class="vl">{e(g["final"])}</span></div>
-    <div class="fld"><span class="lb">ПОБЕДИТЕЛЬ</span><span class="vl">{e(g["winner"])}</span></div>
+    <div class="fld"><span class="lb">ИТОГОВЫЙ&nbsp;СЧЁТ</span>
+        <span class="vl">{e(score_text(g["final_raw"]))}</span>{mark}</div>
+    <div class="fld"><span class="lb">ПОБЕДИТЕЛЬ</span><span class="vl">{e(winner(g))}</span></div>
   </div>
-  <div class="fld wide2"><span class="lb">СЧЁТ&nbsp;ПО&nbsp;ПЕРИОДАМ</span><span class="vl">{e(g["reg"])}</span></div>
-  <div class="fld wide2"><span class="lb">ОВЕРТАЙМЫ</span><span class="vl">{e(g["ot"])}</span></div>
+  <div class="fld wide2"><span class="lb">СЧЁТ&nbsp;ПО&nbsp;ПЕРИОДАМ</span><span class="vl">{e(periods)}</span></div>
 </div>'''
+
 
 def officials_html(judge, secretary):
     return f'''<div class="officials">
-  <div class="off-col"><div class="off-h">СУДЬИ</div><div class="off-v">{e(judge)}</div></div>
-  <div class="off-col"><div class="off-h">СЕКРЕТАРИ</div><div class="off-v">{e(secretary)}</div></div>
+  <div><div class="off-h">СУДЬИ</div><div class="off-v">{e(judge)}</div></div>
+  <div><div class="off-h">СЕКРЕТАРИ</div><div class="off-v">{e(secretary)}</div></div>
 </div>'''
 
-def day_sheets_html(day_games):
-    """Листы одного игрового дня. Судьи/секретари — внизу последнего листа."""
-    date = day_games[0]["date"]
+
+def day_html(day_games, slots, logo):
+    date = day_games[0]["date"].strftime("%d.%m.%Y")
     judge, secretary = day_games[0]["judge"], day_games[0]["secretary"]
     chunks = [day_games[i:i + CARDS_PER_SHEET]
               for i in range(0, len(day_games), CARDS_PER_SHEET)]
     out = ""
-    for si, chunk in enumerate(chunks):
-        label = e(date) + (f' · лист {si+1} из {len(chunks)}' if len(chunks) > 1 else "")
-        off = officials_html(judge, secretary) if si == len(chunks) - 1 else ""
+    for i, chunk in enumerate(chunks):
+        label = e(date) + (f" · лист {i+1} из {len(chunks)}" if len(chunks) > 1 else "")
+        off = officials_html(judge, secretary) if i == len(chunks) - 1 else ""
         out += (f'<div class="sheet"><div class="head">'
-                f'<div class="logo">ХОККЕЙ</div>'
+                f'<div class="league">{e(LEAGUE_TITLE)}</div>'
+                f'<div class="subhead">'
+                f'<div class="side left"><img class="logo" src="data:image/png;base64,{logo}" alt="РХЛ"></div>'
                 f'<div class="title">ПРОТОКОЛ ИГРОВОГО ДНЯ</div>'
-                f'<div class="date">{label}</div></div>'
-                f'<div class="grid">{"".join(card_html(g) for g in chunk)}</div>{off}</div>')
+                f'<div class="side right"><div class="date">{label}</div></div>'
+                f'</div></div>'
+                f'<div class="grid">{"".join(card_html(g, slots) for g in chunk)}</div>{off}</div>')
     return out, len(chunks)
 
-def page(body):
-    return ('<!doctype html><html><head><meta charset="utf-8">'
-            f'<style>{CSS}</style></head><body>{body}</body></html>')
 
-def render_pdf(html_str, pdf_path, tmp_html):
+def render_pdf(body, pdf_path, tmp_html):
+    page = ('<!doctype html><html><head><meta charset="utf-8">'
+            f'<style>{CSS}</style></head><body>{body}</body></html>')
     with open(tmp_html, "w", encoding="utf-8") as f:
-        f.write(html_str)
+        f.write(page)
     subprocess.run([CHROME, "--headless", "--no-sandbox", "--disable-gpu",
                     "--no-pdf-header-footer", f"--print-to-pdf={pdf_path}",
                     f"file://{tmp_html}"], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-# ---------------------------------------------------------------- main
-def main():
-    games, label_warnings = read_games(XLSX)
-    print(f"Прочитано игр: {len(games)}")
+
+# ------------------------------------------------------- вопросы и ошибки
+def problems_report(games, path):
+    lines = ["=" * 78,
+             "ВОПРОСЫ И ОШИБКИ ПО ИСХОДНЫМ ДАННЫМ",
+             "=" * 78,
+             "",
+             "Данные в протоколы перенесены ровно так, как записаны в исходной таблице.",
+             "Ничего не исправлялось. Ниже — места, которые требуют вашей проверки.",
+             ""]
+    n = 0
+    for g in games:
+        if g["goals1"] is None or any(parse_score(p)[0] is None for p in g["periods_raw"]):
+            continue
+        sh = sum(parse_score(p)[0] for p in g["periods_raw"])
+        sa = sum(parse_score(p)[1] for p in g["periods_raw"])
+        if (sh, sa) == (g["goals1"], g["goals2"]) or g["shootout"] or g["overtime"]:
+            continue
+        n += 1
+        tie_plus_one = sh == sa and (g["goals1"] - sh) + (g["goals2"] - sa) == 1
+        lines += ["-" * 78,
+                  f"{n}. Соревнование: {g['comp']}",
+                  f"   Строка в таблице: {g['row']}",
+                  f"   Дата: {g['date'].strftime('%d.%m.%Y')}   Время: {g['time']}",
+                  f"   Матч: {g['team1']} — {g['team2']}",
+                  f"   Итоговый счёт: {g['final_raw']}",
+                  f"   Счёт по периодам: {'   '.join(g['periods_raw'])}",
+                  f"   Сумма по периодам: {sh}:{sa}",
+                  f"   Не сходится: по периодам {sh}:{sa}, а в итоге {g['goals1']}:{g['goals2']}"
+                  f" (разница {g['goals1'] - sh}:{g['goals2'] - sa})",
+                  ""]
+        if tie_plus_one:
+            lines += ["   ВОПРОС: после трёх периодов ничья, а в итоге на один гол больше.",
+                      "   Так записаны матчи, выигранные по буллитам, но пометки «Б Буллиты»",
+                      "   у этого матча нет. Это победа по буллитам и пометку пропустили,",
+                      "   или в счёте опечатка? Просьба уточнить.", ""]
+        else:
+            lines += ["   ОШИБКА: счёт не сходится со счётом по периодам.",
+                      "   Ничьей после трёх периодов не было, поэтому буллитами это",
+                      "   не объясняется: в итоге есть гол, которого нет ни в одном периоде.",
+                      "   Просьба сверить с протоколом матча.", ""]
+    lines += ["=" * 78,
+              f"Всего мест, требующих проверки: {n}",
+              "=" * 78]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return n
+
+
+def main(src):
+    games, _ = read_workbook(src)
+    games = [g for g in games if g["date"] and g["time"]]
+    slots = max(max(len(g["roster1"]), len(g["roster2"])) for g in games)
+    print(f"матчей: {len(games)}   строк в таблице состава: {slots}")
+
+    os.makedirs(OUT, exist_ok=True)
+    os.makedirs(os.path.join(OUT, "po_dnyam"), exist_ok=True)
+    logo = logo_b64()
+    tmp = os.path.join(OUT, "_tmp.html")
 
     byday = defaultdict(list)
     for g in games:
-        byday[(g["sheet"], g["date_key"])].append(g)
-    days = sorted(byday.keys(), key=lambda k: (k[1], k[0]))
+        byday[g["date"]].append(g)
+    for d in byday:
+        byday[d].sort(key=lambda x: x["time"])
 
-    if os.path.isdir(OUT):
-        shutil.rmtree(OUT)
-    os.makedirs(os.path.join(OUT, "by_day"), exist_ok=True)
-    tmp = os.path.join(OUT, "_tmp.html")
-
-    # Копим листы по месяцам: имя листа Excel ("июль", "август") = месяц.
-    months = defaultdict(str)
-    month_sheets = Counter()
-    month_order = []
+    bymonth = defaultdict(str)
+    order, sheets_of = [], defaultdict(int)
     total_sheets = 0
-    for key in days:
-        sheet_name, date_key = key
-        day_games = byday[key]
-        body, nsheets = day_sheets_html(day_games)
-        total_sheets += nsheets
-        if sheet_name not in months:
-            month_order.append(sheet_name)
-        months[sheet_name] += body
-        month_sheets[sheet_name] += nsheets
-        render_pdf(page(body),
-                   os.path.join(OUT, "by_day", f"{date_key}_{sheet_name}.pdf"), tmp)
+    for d in sorted(byday):
+        body, n = day_html(byday[d], slots, logo)
+        total_sheets += n
+        key = (d.year, d.month)
+        if key not in bymonth:
+            order.append(key)
+        bymonth[key] += body
+        sheets_of[key] += n
+        render_pdf(body, os.path.join(OUT, "po_dnyam", f"{d}.pdf"), tmp)
 
-    for sheet_name in month_order:
-        out_path = os.path.join(OUT, f"Протоколы_{sheet_name}.pdf")
-        render_pdf(page(months[sheet_name]), out_path, tmp)
-        n_games = sum(len(byday[k]) for k in days if k[0] == sheet_name)
-        print(f"  {sheet_name}: игр {n_games}, листов {month_sheets[sheet_name]} -> {os.path.basename(out_path)}")
+    for key in order:
+        y, m = key
+        name = f"Протоколы_{MONTHS[m]}_{y}.pdf"
+        render_pdf(bymonth[key], os.path.join(OUT, name), tmp)
+        cnt = sum(len(byday[d]) for d in byday if (d.year, d.month) == key)
+        days = sum(1 for d in byday if (d.year, d.month) == key)
+        print(f"   {name}: матчей {cnt}, дней {days}, листов {sheets_of[key]}")
 
-    os.remove(tmp)
-    print(f"Дней: {len(days)} | листов всего: {total_sheets} | месяцев: {len(month_order)}")
-    return games, label_warnings, days, byday, total_sheets
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    n = problems_report(games, os.path.join(OUT, "Voprosy_i_oshibki.txt"))
+    print(f"дней: {len(byday)}   листов всего: {total_sheets}")
+    print(f"вопросов и ошибок вынесено: {n}")
+    return games
+
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "data", "new", "div1.xlsx"))
