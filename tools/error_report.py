@@ -51,6 +51,11 @@ def collect(path):
     def add(kind, game, what, text):
         problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text))
 
+    # Повторяющиеся дефекты состава копим и выводим одной записью со списком
+    # матчей: иначе одна и та же проблема размножается на десятки находок.
+    no_number = defaultdict(list)
+    dup_numbers = defaultdict(list)
+
     def rows_text(rows):
         shown = ", ".join(f"стр. {r}" for r in rows[:8])
         return shown + (f" и ещё {len(rows) - 8}" if len(rows) > 8 else "")
@@ -119,27 +124,27 @@ def collect(path):
                     "Счёт не сходится с суммой по периодам. Ничьей после трёх периодов "
                     "не было — буллитами не объясняется.")
 
-        for who, (team, roster) in zip(("А", "В"),
-                                       ((g["team1"], g["roster1"]), (g["team2"], g["roster2"]))):
+        for team, roster in ((g["team1"], g["roster1"]), (g["team2"], g["roster2"])):
             nums = [n for n, _ in roster]
             for n, c in Counter(nums).items():
                 if c > 1 and n:
-                    names = ", ".join(sorted(nm for nu, nm in roster if nu == n))
-                    add(ERROR, g, "повтор игрового номера",
-                        f"В составе команды {who} («{team}») номер №{n} у двух игроков: "
-                        f"{names}.")
+                    who_n = tuple(sorted(nm for nu, nm in roster if nu == n))
+                    dup_numbers[(team, n, who_n)].append(g["row"])
             for n, nm in roster:
                 if not nm:
                     add(ERROR, g, "игрок без ФИО",
-                        f"В составе команды {who} («{team}») есть номер №{n} без фамилии.")
+                        f"В составе «{team}» есть номер №{n} без фамилии.")
                 elif not n:
-                    add(ERROR, g, "игрок без номера",
-                        f"В составе команды {who} («{team}») у игрока «{nm}» "
-                        f"не указан игровой номер.")
-                if nm and (nm[0].isdigit() or nm[0] in "()[].,-"):
-                    add(ERROR, g, "посторонние символы в ФИО",
-                        f"В составе команды {who} («{team}») игрок записан как «{nm}» — "
-                        f"в начале лишние символы.")
+                    no_number[(team, nm)].append(g["row"])
+
+    for (team, nm), rows in sorted(no_number.items()):
+        add(ERROR, None, "игрок без номера",
+            f"У «{nm}» («{team}») не указан игровой номер — в {len(rows)} матчах: "
+            f"{rows_text(rows)}.")
+    for (team, n, who_n), rows in sorted(dup_numbers.items()):
+        add(ERROR, None, "повтор игрового номера",
+            f"В составе «{team}» номер №{n} у двух игроков: {', '.join(who_n)} — "
+            f"в {len(rows)} матчах: {rows_text(rows)}.")
 
     # ---------- по файлу целиком
     key = lambda g: (g["comp"], str(g["date"]), g["time"], g["team1"], g["team2"])
@@ -184,32 +189,78 @@ def collect(path):
             if team and len(roster) >= 3:
                 roster_teams[frozenset(nm for _, nm in roster)].append((g["row"], team))
 
-    for players, entries in sorted(roster_teams.items(),
-                                   key=lambda x: sorted(r for r, _ in x[1])):
+    swapped_rosters = set()
+    conflicts = []
+    for players, entries in roster_teams.items():
         if len({t for _, t in entries}) < 2:
             continue
+        swapped_rosters |= players
         by_team = defaultdict(list)
         for row, team in entries:
             by_team[team].append(row)
-        parts = "; ".join(f"«{t}» ({rows_text(sorted(by_team[t]))})"
-                          for t in sorted(by_team))
-        add(ERROR, None, "один состав за разные команды",
-            f"Одни и те же {len(players)} игроков записаны за разные команды: "
-            f"{parts}. Где-то команда указана неверно.")
+        counts = sorted((len(rows), t) for t, rows in by_team.items())
+        # строки, где состав записан за команду, под которой он встречается реже,
+        # — это и есть подозрительные матчи
+        if counts[0][0] == counts[-1][0]:
+            anomaly = frozenset(r for rows in by_team.values() for r in rows)
+        else:
+            anomaly = frozenset(by_team[counts[0][1]])
+        conflicts.append(dict(players=players, by_team=by_team, anomaly=anomaly))
 
-    for nm, teams in ptm.items():
-        if len(teams) > 1:
-            add(ERROR, None, "игрок в разных командах",
-                f"«{nm}» выходит за разные команды: "
-                f"{', '.join(f'{t} ({c})' for t, c in teams.most_common())}. "
-                f"Если переходы между командами допускаются — вопрос снимается, "
-                f"иначе ошибка в составе.")
+    # Перестановка составов в матче даёт два зеркальных конфликта с одними и
+    # теми же подозрительными строками — показываем это одной записью.
+    grouped = defaultdict(list)
+    for c in conflicts:
+        grouped[c["anomaly"]].append(c)
 
-    for nm, nums in pnum.items():
-        if len(nums) > 1:
-            add(QUESTION, None, "игрок с разными номерами",
-                f"У «{nm}» в разных матчах разные номера: "
-                f"{', '.join(f'№{n} ({c} раз)' for n, c in nums.items())}.")
+    for anomaly, group in sorted(grouped.items(), key=lambda x: sorted(x[0])):
+        teams = sorted({t for c in group for t in c["by_team"]})
+        rows = sorted(anomaly)
+        if len(group) >= 2 and len(teams) == 2:
+            add(ERROR, None, "составы команд перепутаны местами",
+                f"В {rows_text(rows)} составы команд «{teams[0]}» и «{teams[1]}» "
+                f"стоят не у тех команд: те же игроки в остальных матчах записаны "
+                f"наоборот. Уточнить, кто за кого играл.")
+            continue
+        for c in group:
+            parts = "; ".join(f"«{t}» ({rows_text(sorted(c['by_team'][t]))})"
+                              for t in sorted(c["by_team"]))
+            add(ERROR, None, "один состав за разные команды",
+                f"Одни и те же {len(c['players'])} игроков записаны за разные "
+                f"команды: {parts}. Где-то команда указана неверно.")
+
+    # имена с посторонними символами (нумерация, скобки, цифры в начале)
+    bad_names = defaultdict(list)
+    for g in games:
+        for team, roster in ((g["team1"], g["roster1"]), (g["team2"], g["roster2"])):
+            for _, nm in roster:
+                if nm and (nm[0].isdigit() or nm[0] in "()[].,-"):
+                    bad_names[(team, nm)].append(g["row"])
+    for (team, nm), rows in sorted(bad_names.items()):
+        add(ERROR, None, "посторонние символы в ФИО",
+            f"В составе «{team}» игрок записан как «{nm}» — в начале лишние символы. "
+            f"{rows_text(sorted(rows))}.")
+
+    # Однотипные находки по игрокам — одним вопросом на всю группу.
+    movers = [(nm, teams) for nm, teams in ptm.items()
+              if len(teams) > 1 and nm not in swapped_rosters]
+    if movers:
+        lines_m = "; ".join(
+            f"{nm} ({', '.join(f'{t} — {c}' for t, c in teams.most_common())})"
+            for nm, teams in sorted(movers))
+        add(ERROR, None, "игроки выходят за разные команды",
+            f"За разные команды выходят {len(movers)} игроков: {lines_m}. "
+            f"Если составы формируются драфтом на игровой день — вопрос снимается, "
+            f"иначе это ошибка в составах.")
+
+    renumbered = [(nm, nums) for nm, nums in pnum.items() if len(nums) > 1]
+    if renumbered:
+        lines_n = "; ".join(
+            f"{nm} ({', '.join(f'№{n} — {c}' for n, c in nums.most_common())})"
+            for nm, nums in sorted(renumbered))
+        add(ERROR, None, "игроки с разными номерами",
+            f"У {len(renumbered)} игроков в разных матчах разные игровые номера: "
+            f"{lines_n}. Номер меняется вместе с командой или это ошибка?")
 
     names = sorted({g["team1"] for g in games} | {g["team2"] for g in games})
     for i, a in enumerate(names):
