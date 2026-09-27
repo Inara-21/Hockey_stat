@@ -162,11 +162,35 @@ def collect(path):
             for n, nm in roster:
                 ptm[nm][team] += 1
                 pnum[nm][n] += 1
+
+    # основная команда игрока — та, за которую он выходит чаще всего
+    home = {nm: teams.most_common(1)[0][0] for nm, teams in ptm.items()}
+
+    # Если больше половины состава — игроки другой команды, это ошибка
+    # заполнения одного матча, а не история про каждого игрока отдельно.
+    swapped_rosters = set()
+    for g in games:
+        for side, (team, roster) in enumerate(
+                ((g["team1"], g["roster1"]), (g["team2"], g["roster2"])), 1):
+            if not roster or not team:
+                continue
+            alien = Counter(home[nm] for _, nm in roster if home.get(nm) not in (None, team))
+            if alien and sum(alien.values()) * 2 >= len(roster):
+                other, cnt = alien.most_common(1)[0]
+                add(ERROR, g, "состав заполнен игроками другой команды",
+                    f"В составе команды {'А' if side == 1 else 'В'} ({team}) "
+                    f"{cnt} из {len(roster)} игроков — из команды «{other}». "
+                    f"Похоже, состав скопирован не от той команды.")
+                for _, nm in roster:
+                    if home.get(nm) == other:
+                        swapped_rosters.add(nm)
+
     for nm, teams in ptm.items():
-        if len(teams) > 1:
-            add(QUESTION, None, "игрок в разных командах",
-                f"«{nm}» указан в составах разных команд: "
-                f"{', '.join(f'{t} ({c} матчей)' for t, c in teams.items())}.")
+        if len(teams) > 1 and nm not in swapped_rosters:
+            add(ERROR, None, "игрок в разных командах",
+                f"«{nm}» выходит за разные команды: "
+                f"{', '.join(f'{t} ({c})' for t, c in teams.most_common())}. "
+                f"Так и есть или ошибка в составе?")
     for nm, nums in pnum.items():
         if len(nums) > 1:
             add(QUESTION, None, "игрок с разными номерами",
