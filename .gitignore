@@ -12,3 +12,8 @@ _tmp.html
 # Python
 __pycache__/
 *.pyc
+
+# Сборка Word-отчёта
+tools/docx_build/node_modules/
+tools/docx_build/package-lock.json
+reports/report_data.json

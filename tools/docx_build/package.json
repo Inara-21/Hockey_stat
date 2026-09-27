@@ -1,0 +1,7 @@
+{
+  "name": "hockey-report-docx",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Вёрстка отчёта о проверке данных в формате Word",
+  "dependencies": { "docx": "^9.0.0" }
+}
