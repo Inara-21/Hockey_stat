@@ -5,7 +5,7 @@ const path = require("path");
 const d = require("docx");
 const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel,
         Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType,
-        Footer, PageNumber, VerticalAlign } = d;
+        Footer, PageNumber, VerticalAlign, PageOrientation } = d;
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const data = JSON.parse(fs.readFileSync(path.join(ROOT, "reports", "report_data.json"), "utf8"));
@@ -13,6 +13,7 @@ const data = JSON.parse(fs.readFileSync(path.join(ROOT, "reports", "report_data.
 const FONT = "Calibri";
 const MM = 56.7;
 const sz = pt => pt * 2;
+const CONTENT_W = 15250;   // ширина полосы набора, альбомная А4
 const INK = "1A1F36", ACCENT = "2B2F77", MUTED = "5A5F7A";
 const LINE = "C7CBDC", HEAD_BG = "EEF0F7", ZEBRA = "F7F8FC";
 
@@ -67,7 +68,7 @@ children.push(p(t(`Дата проверки: ${data.date}`, { pt: 10, color: MU
                 { align: AlignmentType.CENTER, after: 300 }));
 
 // три числа
-const NUM_W = 3100;
+const NUM_W = Math.floor(CONTENT_W / 3);
 children.push(new Table({
   columnWidths: [NUM_W, NUM_W, NUM_W],
   width: { size: NUM_W * 3, type: WidthType.DXA },
@@ -92,7 +93,7 @@ children.push(H1("Главное"));
 children.push(p(t("Находки сгруппированы по смыслу. Начинать стоит сверху — там самые массовые группы.",
                   { pt: 10, color: MUTED })));
 
-const TW = [1900, 900, 6500];
+const TW = [2600, 1200, CONTENT_W - 3800];
 const themeRows = [new TableRow({ tableHeader: true, children: [
   cell(p(t("Тема", { b: true, pt: 10 }), { after: 0 }), { w: TW[0], bg: HEAD_BG }),
   cell(p(t("Находок", { b: true, pt: 10 }), { align: AlignmentType.CENTER, after: 0 }), { w: TW[1], bg: HEAD_BG }),
@@ -111,7 +112,7 @@ children.push(new Table({ columnWidths: TW, width: { size: TW.reduce((a, b) => a
 
 // ---------------------------------------------------------------- сводная
 children.push(H1("Сколько матчей проверено"));
-const SW = [5200, 2600, 1500];
+const SW = [7500, 4000, CONTENT_W - 11500];
 const sumRows = [new TableRow({ tableHeader: true, children: [
   cell(p(t("Соревнование", { b: true, pt: 10 }), { after: 0 }), { w: SW[0], bg: HEAD_BG }),
   cell(p(t("Месяц", { b: true, pt: 10 }), { after: 0 }), { w: SW[1], bg: HEAD_BG }),
@@ -134,8 +135,11 @@ children.push(new Table({ columnWidths: SW, width: { size: SW.reduce((a, b) => a
 
 // ---------------------------------------------------------------- по файлам
 children.push(H1("Подробно по каждому файлу"));
+children.push(p([t("Последняя колонка — для ответа организаторов. ", { pt: 10, b: true }),
+                 t("Напротив каждой строки впишите, как исправляем ошибку или почему "
+                   + "данные верны как есть.", { pt: 10 })], { after: 160 }));
 
-const FW = [800, 2600, 2300, 3600];
+const FW = [800, 2500, 2200, 4400, CONTENT_W - 9900];
 data.blocks.forEach(b => {
   children.push(p(t(`${b.title} — ${b.period}`, { pt: 12, b: true }), { before: 300, after: 40, keepNext: true }));
   children.push(p(t(`${b.games} матчей · команд ${b.teams} · игроков ${b.players} · `
@@ -150,6 +154,9 @@ data.blocks.forEach(b => {
     cell(p(t("Матч", { b: true, pt: 9 }), { after: 0 }), { w: FW[1], bg: HEAD_BG }),
     cell(p(t("Счёт", { b: true, pt: 9 }), { after: 0 }), { w: FW[2], bg: HEAD_BG }),
     cell(p(t("Что не так", { b: true, pt: 9 }), { after: 0 }), { w: FW[3], bg: HEAD_BG }),
+    cell([p(t("Решение организатора", { b: true, pt: 9 }), { after: 20 }),
+          p(t("как исправляем или почему верно как есть", { pt: 7, i: true, color: MUTED }), { after: 0 })],
+         { w: FW[4], bg: HEAD_BG }),
   ]})];
   b.findings.forEach((f, i) => {
     const bg = i % 2 ? ZEBRA : undefined;
@@ -158,6 +165,7 @@ data.blocks.forEach(b => {
       cell(lines(f.match || f.what, { pt: 9 }), { w: FW[1], bg }),
       cell(lines(f.score || "—", { pt: 9, color: MUTED }), { w: FW[2], bg }),
       cell(p(t(f.text, { pt: 9 }), { after: 0 }), { w: FW[3], bg }),
+      cell(p(t("", { pt: 9 }), { after: 0 }), { w: FW[4] }),
     ]}));
   });
   children.push(new Table({ columnWidths: FW, width: { size: FW.reduce((a, b2) => a + b2), type: WidthType.DXA }, rows }));
@@ -168,8 +176,9 @@ const doc = new Document({
   styles: { default: { document: { run: { font: FONT, size: sz(10), color: INK } } } },
   sections: [{
     properties: { page: {
-      size: { width: 11906, height: 16838 },
-      margin: { top: 18 * MM, bottom: 16 * MM, left: 16 * MM, right: 14 * MM },
+      // размеры книжные, ориентация альбомная — docx меняет их местами сам
+      size: { width: 11906, height: 16838, orientation: PageOrientation.LANDSCAPE },
+      margin: { top: 15 * MM, bottom: 12 * MM, left: 14 * MM, right: 14 * MM },
     }},
     footers: { default: new Footer({ children: [new Paragraph({
       alignment: AlignmentType.CENTER,
