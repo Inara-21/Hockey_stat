@@ -60,6 +60,14 @@ MONTHS = {1: "январь", 2: "февраль", 3: "март", 4: "апрел�
           7: "июль", 8: "август", 9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь"}
 
 
+def in_matches(n):
+    """«Встречается в 8 матчах» / пусто, если матч один — строка и так видна."""
+    if n <= 1:
+        return ""
+    word = "матче" if n % 10 == 1 and n % 100 != 11 else "матчах"
+    return f"Встречается в {n} {word}. "
+
+
 def period_sums(g):
     if any(parse_score(p)[0] is None for p in g["periods_raw"]):
         return None, None
@@ -73,8 +81,9 @@ def collect(path):
     fname = os.path.basename(path)
     problems = []
 
-    def add(kind, game, what, text):
-        problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text))
+    def add(kind, game, what, text, rows=None):
+        problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text,
+                             rows=sorted(rows) if rows else []))
 
     # Повторяющиеся дефекты состава копим и выводим одной записью со списком
     # матчей: иначе одна и та же проблема размножается на десятки находок.
@@ -102,18 +111,18 @@ def collect(path):
                 f"Время не читается (записано как «{g['time_kind']}»).")
         if not g["team1"] or not g["team2"]:
             add(ERROR, g, "пустая команда",
-                f"Не заполнено название команды: «{g['team1']}» — «{g['team2']}».")
+                f"Не заполнено название команды: {g['team1'] or '(пусто)'} — {g['team2'] or '(пусто)'}.")
         elif g["team1"] == g["team2"]:
             add(ERROR, g, "команда против себя",
-                f"В обеих графах одна и та же команда: {g['team1']}.")
+                f"В обеих графах одна и та же команда: {g['team1']}. Кто был соперником?")
         if not g["roster1"] or not g["roster2"]:
             add(ERROR, g, "пустой состав",
                 f"Состав не заполнен: команда А — {len(g['roster1'])} игроков, "
                 f"команда В — {len(g['roster2'])}.")
         if not g["judge"]:
-            add(ERROR, g, "нет судьи", "Судья не указан.")
+            add(ERROR, g, "нет судьи", "Судья не указан. Кто судил матч?")
         if not g["secretary"]:
-            add(ERROR, g, "нет секретаря", "Секретарь не указан.")
+            add(ERROR, g, "нет секретаря", "Секретарь не указан. Кто вёл протокол?")
 
         if not g["final_raw"]:
             add(ERROR, g, "пустой итоговый счёт", "Итоговый счёт не заполнен.")
@@ -168,18 +177,20 @@ def collect(path):
             for n, nm in roster:
                 if not nm:
                     add(ERROR, g, "игрок без ФИО",
-                        f"В составе «{team}» есть номер №{n} без фамилии.")
+                        f"В составе {team} есть номер {n}, но фамилия не указана. "
+                        f"Кто это?")
                 elif not n:
                     no_number[(team, nm)].append(g["row"])
 
     for (team, nm), rows in sorted(no_number.items()):
         add(ERROR, None, "игрок без номера",
-            f"У «{nm}» («{team}») не указан игровой номер — в {len(rows)} матчах: "
-            f"{rows_text(rows)}.")
+            f"{nm} ({team}) — не указан игровой номер. {in_matches(len(rows))}"
+            f"Какой у него номер?", rows)
     for (team, n, who_n), rows in sorted(dup_numbers.items()):
         add(ERROR, None, "повтор игрового номера",
-            f"В составе «{team}» номер №{n} у двух игроков: {', '.join(who_n)} — "
-            f"в {len(rows)} матчах: {rows_text(rows)}.")
+            f"В составе {team} номер {n} стоит сразу у двух игроков: "
+            f"{' и '.join(who_n)}. {in_matches(len(rows))}"
+            f"У кого из них этот номер верный?", rows)
 
     # ---------- по файлу целиком
     key = lambda g: (g["comp"], str(g["date"]), g["time"], g["team1"], g["team2"])
@@ -188,7 +199,7 @@ def collect(path):
         k = key(g)
         if k in seen:
             add(ERROR, g, "матч встречается дважды",
-                f"Такой же матч записан в строке {seen[k]['row']}.")
+                f"Такой же матч уже записан в строке {seen[k]['row']}. Это два разных матча или запись продублирована?")
         else:
             seen[k] = g
 
@@ -204,8 +215,8 @@ def collect(path):
         for team, c in cnt.items():
             if c > 1:
                 add(ERROR, gs[0], "команда в двух матчах одновременно",
-                    f"{d.strftime('%d.%m.%Y')} в {t} команда «{team}» указана "
-                    f"сразу в {c} матчах.")
+                    f"{d.strftime('%d.%m.%Y')} в {t} команда {team} указана сразу в {c} матчах. "
+                    f"Какое время верное?")
 
     ptm, pnum = defaultdict(Counter), defaultdict(Counter)
     for g in games:
@@ -229,8 +240,9 @@ def collect(path):
                     oversized[(team, len(roster))].append(g["row"])
         for (team, n), rows in sorted(oversized.items()):
             add(ERROR, None, "состав больше обычного",
-                f"У «{team}» в составе {n} игроков, тогда как у остальных команд файла "
-                f"обычно {typical}. В {len(rows)} матчах: {rows_text(sorted(rows))}.")
+                f"В составе {team} заявлено {n} игроков, тогда как у остальных команд "
+                f"обычно {typical}. {in_matches(len(rows))}"
+                f"Это допустимо или в состав попали лишние игроки?", rows)
 
     # Один и тот же состав под разными названиями команд.
     # Это объективный факт, в отличие от догадки про «основную команду»:
@@ -271,16 +283,24 @@ def collect(path):
         rows = sorted(anomaly)
         if len(group) >= 2 and len(teams) == 2:
             add(ERROR, None, "составы команд перепутаны местами",
-                f"В {rows_text(rows)} составы команд «{teams[0]}» и «{teams[1]}» "
-                f"стоят не у тех команд: те же игроки в остальных матчах записаны "
-                f"наоборот. Уточнить, кто за кого играл.")
+                f"В этих матчах составы команд {teams[0]} и {teams[1]} поменяны "
+                f"местами: игроки, указанные здесь в составе команды {teams[0]}, "
+                f"в остальных матчах играют в составе команды {teams[1]}, и наоборот. "
+                f"В каком из матчей команды указаны верно?", rows)
             continue
         for c in group:
-            parts = "; ".join(f"«{t}» ({rows_text(sorted(c['by_team'][t]))})"
-                              for t in sorted(c["by_team"]))
+            by_team = c["by_team"]
+            counts = sorted(((len(r), t) for t, r in by_team.items()), reverse=True)
+            main_team = counts[0][1]
+            odd = [(t, r) for t, r in by_team.items() if t != main_team]
+            odd_rows = sorted(r for _, rr in odd for r in rr)
+            odd_names = ", ".join(t for t, _ in odd)
             add(ERROR, None, "один состав за разные команды",
-                f"Одни и те же {len(c['players'])} игроков записаны за разные "
-                f"команды: {parts}. Где-то команда указана неверно.")
+                f"Эти же {len(c['players'])} игроков в {len(by_team[main_team])} других "
+                f"матчах указаны в составе команды {main_team}, а здесь — в составе "
+                f"команды {odd_names}. Если состав принадлежит команде {main_team}, "
+                f"то здесь указана не та команда. Какая команда играла на самом деле?",
+                odd_rows)
 
     # имена с посторонними символами (нумерация, скобки, цифры в начале)
     bad_names = defaultdict(list)
@@ -290,28 +310,29 @@ def collect(path):
                 if nm and (nm[0].isdigit() or nm[0] in "()[].,-"):
                     bad_names[(team, nm)].append(g["row"])
     for (team, nm), rows in sorted(bad_names.items()):
+        clean = nm.lstrip("0123456789()[].,- ")
         add(ERROR, None, "посторонние символы в ФИО",
-            f"В составе «{team}» игрок записан как «{nm}» — в начале лишние символы. "
-            f"{rows_text(sorted(rows))}.")
+            f"В составе {team} игрок записан как {nm} — в начале лишние символы. "
+            f"Должно быть {clean}?", rows)
 
     # Однотипные находки по игрокам — одним вопросом на всю группу.
     movers = [(nm, teams) for nm, teams in ptm.items()
               if len(teams) > 1 and nm not in swapped_rosters]
     if movers:
         lines_m = "; ".join(
-            f"{nm} ({', '.join(f'{t} — {c}' for t, c in teams.most_common())})"
+            f"{nm}: {', '.join(f'{t} — {c}' for t, c in teams.most_common())}"
             for nm, teams in sorted(movers))
         add(QUESTION, None, "игроки выходят за разные команды",
-            f"За разные команды выходят {len(movers)} игроков: {lines_m}. "
+            f"За разные команды выходят {len(movers)} игроков. {lines_m}. "
             f"Уточнить, верно ли это.")
 
     renumbered = [(nm, nums) for nm, nums in pnum.items() if len(nums) > 1]
     if renumbered:
         lines_n = "; ".join(
-            f"{nm} ({', '.join(f'№{n} — {c}' for n, c in nums.most_common())})"
+            f"{nm}: {', '.join(f'номер {n} — {c}' for n, c in nums.most_common())}"
             for nm, nums in sorted(renumbered))
         add(QUESTION, None, "игроки с разными номерами",
-            f"У {len(renumbered)} игроков в разных матчах разные игровые номера: "
+            f"У {len(renumbered)} игроков в разных матчах разные игровые номера. "
             f"{lines_n}. Номер меняется вместе с командой или это ошибка?")
 
     # Команда, у которой матчей на порядок меньше, чем у остальных, — скорее
@@ -328,19 +349,19 @@ def collect(path):
         median = counts[len(counts) // 2]
         rare = [(t, c) for t, c in sorted(team_games.items()) if c * 10 < median]
         if rare:
-            listed = "; ".join(
-                f"«{t}» — {c} матч(а): {rows_text(sorted(team_rows[t]))}" for t, c in rare)
+            listed = ", ".join(f"{t} — {c}" for t, c in rare)
+            rare_rows = sorted({r for t, _ in rare for r in team_rows[t]})
             add(ERROR, None, "команда встречается в единичных матчах",
-                f"У остальных команд файла порядка {median} матчей, а здесь: {listed}. "
-                f"Похоже, название команды указано неверно или матчи из другого "
-                f"соревнования попали в файл.")
+                f"У остальных команд файла порядка {median} матчей, а здесь совсем мало: "
+                f"{listed}. Эти команды относятся к этому соревнованию или матчи попали "
+                f"в файл по ошибке?", rare_rows)
 
     names = sorted({g["team1"] for g in games} | {g["team2"] for g in games})
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             if difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.85:
                 add(ERROR, None, "похожие названия команд",
-                    f"Названия «{a}» и «{b}» очень похожи — возможна опечатка.")
+                    f"Названия {a} и {b} очень похожи. Это две разные команды или опечатка?")
 
     # Плотность календаря (сколько матчей в день, пустые дни) не проверяем:
     # расписание — не наша зона ответственности.
@@ -371,6 +392,15 @@ def collect(path):
                      for c in row if isinstance(c.value, str) and c.value.startswith("=")),
     )
     return games, problems, summary
+
+
+def fmt_rows(rows, limit=12):
+    """Номера строк для первого столбца: «стр. 1, 16, 61 и ещё 5»."""
+    if not rows:
+        return ""
+    shown = ", ".join(str(r) for r in rows[:limit])
+    tail = f" и ещё {len(rows) - limit}" if len(rows) > limit else ""
+    return f"{'стр.' if len(rows) == 1 else 'стр.'} {shown}{tail}"
 
 
 def render(all_summaries, all_problems, path):
@@ -463,7 +493,8 @@ def render(all_summaries, all_problems, path):
             g = q["game"]
             say("")
             if g is None:
-                say(f"{i}. {q['what']}")
+                where = fmt_rows(q.get("rows"))
+                say(f"{i}. {where}   {q['what']}" if where else f"{i}. {q['what']}")
                 say(f"   {q['text']}")
                 continue
             dd = g["date"].strftime("%d.%m") if g["date"] else "—"

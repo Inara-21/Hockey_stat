@@ -27,9 +27,17 @@ ASK = {
 DEFAULT_ASK = "Это нормальная практика или ошибка в данных? Просим подтвердить."
 
 
+def fmt_rows(rows, limit=12):
+    if not rows:
+        return ""
+    shown = ", ".join(str(r) for r in rows[:limit])
+    return shown + (f"\nи ещё {len(rows) - limit}" if len(rows) > limit else "")
+
+
 def finding(p):
     g = p["game"]
-    item = dict(what=p["what"], text=p["text"], row="", match="", score="")
+    item = dict(what=p["what"], text=p["text"],
+                row=fmt_rows(p.get("rows")), match="", score="")
     if g is not None:
         item["row"] = str(g["row"])
         d = g["date"].strftime("%d.%m.%Y") if g["date"] else "—"

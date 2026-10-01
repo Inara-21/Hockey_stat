@@ -100,7 +100,11 @@ def main():
                 g = p["game"]
                 say("")
                 if g is None:
-                    say(f"{i}. {p['what']}")
+                    rows = p.get("rows") or []
+                    where = (("Строка " if len(rows) == 1 else "Строки ")
+                             + ", ".join(str(r) for r in rows[:12])
+                             + (f" и ещё {len(rows) - 12}" if len(rows) > 12 else "")) if rows else ""
+                    say(f"{i}. {where}" if where else f"{i}. {p['what']}")
                     say(f"   {p['text']}")
                     continue
                 d = g["date"].strftime("%d.%m.%Y") if g["date"] else "—"
