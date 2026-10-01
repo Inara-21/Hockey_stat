@@ -8,26 +8,14 @@ import datetime, json, os, re, sys
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from error_report import collect, period_sums, SRC_DIR, MONTHS, ERROR, QUESTION
+from error_report import (collect, period_sums, SRC_DIR, MONTHS, ERROR,
+                          QUESTION, ASK, DEFAULT_ASK)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "reports", "report_data.json")
 
-# Как спрашивать по каждому виду вопроса
-ASK = {
-    "игроки выходят за разные команды":
-        "Допускается ли, что игрок в течение месяца выступает за несколько команд? "
-        "Если это предусмотрено правилами соревнования — вопрос снимается. "
-        "Если нет — это ошибка в составах, и её нужно исправить.",
-    "игроки с разными номерами":
-        "Допускается ли, что у игрока в разных матчах разные игровые номера? "
-        "Номер меняется вместе с командой. Если это предусмотрено правилами — "
-        "вопрос снимается, если нет — это ошибка в составах.",
-}
-DEFAULT_ASK = "Это нормальная практика или ошибка в данных? Просим подтвердить."
-
-
 def fmt_rows(rows, limit=12):
+    """Номера строк для первого столбца таблицы."""
     if not rows:
         return ""
     shown = ", ".join(str(r) for r in rows[:limit])
