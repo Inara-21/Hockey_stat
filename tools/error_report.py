@@ -157,14 +157,10 @@ def repair(games):
             fixed = []
             for n, nm in roster:
                 # нумерация списка, попавшая в ФИО: «1) Козлов Артем Владимирович»
+                # нумерация списка перед ФИО («1) Козлов …») — просто убираем,
+                # в отчёт не выносим; номер игрока проверяется дальше как обычно
                 if nm and NAME_PREFIX.match(nm):
-                    clean = NAME_PREFIX.sub("", nm).strip()
-                    if clean:
-                        done.append(dict(game=g, kind="посторонние символы в ФИО",
-                                         text=f"В составе команды {team} перед ФИО стоит нумерация "
-                                              f"списка: {nm}.",
-                                         fix=f"Очевидное исправление: {clean}. Подтверждаете?"))
-                        nm = clean
+                    nm = NAME_PREFIX.sub("", nm).strip() or nm
                 if nm and not n and len(num_of.get((team, nm), ())) == 1:
                     n = next(iter(num_of[(team, nm)]))
                     done.append(dict(game=g, kind="игрок без номера",
