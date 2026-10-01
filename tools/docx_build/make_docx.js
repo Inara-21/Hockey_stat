@@ -62,7 +62,8 @@ children.push(p(t("ОТЧЁТ О ПРОВЕРКЕ ИСХОДНЫХ ДАННЫХ"
 children.push(p(t("Чемпионат Регулярной хоккейной лиги 3х3", { pt: 12, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 40 }));
 children.push(p(t(`Дата проверки: ${data.date}   ·   проверено матчей: ${data.games}   ·   `
-                  + `найдено ошибок: ${data.errors}`,
+                  + `найдено ошибок: ${data.errors}`
+                  + (data.proposed ? ` (из них с готовым исправлением: ${data.proposed})` : ""),
                   { pt: 10, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 80 }));
 children.push(p(t("Исходные файлы не изменялись. Если исправление ошибки однозначно следует "
