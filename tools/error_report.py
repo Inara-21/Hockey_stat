@@ -170,62 +170,48 @@ def repair(games):
                 fixed.append((n, nm))
             g["roster1" if side == 0 else "roster2"] = fixed
 
-    # Ошибка копирования состава: один и тот же игрок записан за обе команды
-    # матча. Если у одной из команд во всех остальных матчах файла один и тот
-    # же состав полевых игроков, а в этом матче часть его заменена другими,
-    # возвращаем её постоянный состав. Вратаря не трогаем: вратари у команд
-    # меняются. Если постоянного состава нет или игрок входит в постоянный
-    # состав обеих команд, ничего не меняем — это остаётся вопросом.
-    def names(r):
-        return {nm for _, nm in r if nm}
-
-    def overlap(g):
-        a, b = names(g["roster1"]), names(g["roster2"])
-        both = a & b
-        return both if both and len(both) * 2 < min(len(a), len(b)) else set()
+    # Состав одной команды целиком скопирован в другую: в одном матче за обе
+    # команды записаны одни и те же игроки. Восстанавливаем, только если это
+    # однозначно: у одной команды этот состав стоит во всех её матчах, а у
+    # другой во всех остальных матчах файла один и тот же свой состав.
+    # Частичные замены (один-два игрока) не трогаем никогда.
+    def players(r):
+        return frozenset((n, nm) for n, nm in r if nm)
 
     appear = defaultdict(list)
     for g in games:
         appear[g["team1"]].append((g, "roster1"))
         appear[g["team2"]].append((g, "roster2"))
-    broken = {id(g) for g in games if overlap(g)}
 
-    fixes = []
+    def own_roster(team, skip):
+        """Состав команды, если он одинаков во всех её матчах, кроме skip."""
+        others = [h[k] for h, k in appear[team] if h is not skip]
+        if len(others) < 2 or len({players(r) for r in others}) != 1:
+            return None
+        return others[0]
+
     for g in games:
-        both = overlap(g)
-        if not both:
+        r1, r2 = players(g["roster1"]), players(g["roster2"])
+        if not r1 or r1 != r2:
             continue
         found = []
-        for key, team, opp_key in (("roster1", g["team1"], "roster2"),
-                                   ("roster2", g["team2"], "roster1")):
-            others = [h[k][1:] for h, k in appear[team] if id(h) not in broken]
-            if len(others) < 2 or any(set(o) != set(others[0]) for o in others):
-                continue
-            std = others[0]
-            if names(std) & both:
-                continue                      # игрок входит в постоянный состав
-            field = g[key][1:]
-            out = [x for x in field if x not in std]
-            if not out or len(out) * 2 > len(std):
-                continue
-            found.append((key, team, opp_key, std, out, len(others)))
-        if len(found) == 1:
-            fixes.append((g, found[0]))
-
-    for g, (key, team, opp_key, std, out, n_other) in fixes:
-        came = [x for x in std if x not in g[key][1:]]
-        from_opp = sum(1 for _, nm in out if nm in names(g[opp_key]))
-        g[key] = g[key][:1] + list(std)
-        was = ", ".join(f"{nm} №{n}" for n, nm in out)
-        now = ", ".join(f"{nm} №{n}" for n, nm in came)
-        opp = g["team2"] if key == "roster1" else g["team1"]
-        why = (f"во всех остальных {n_other} матчах файла у команды {team} один и тот же "
-               f"состав полевых игроков")
-        if from_opp:
-            why += (f"; {from_opp} из записанных здесь игроков есть и в составе "
-                    f"соперника, команды {opp}")
-        done.append(dict(row=g["row"], game=g, what=f"состав команды {team}",
-                         value=f"было записано: {was}; восстановлено: {now}", why=why))
+        for key, team, other in (("roster1", g["team1"], g["team2"]),
+                                 ("roster2", g["team2"], g["team1"])):
+            mine, theirs = own_roster(team, g), own_roster(other, g)
+            if mine and theirs and players(mine) != r1 and players(theirs) == r1:
+                found.append((key, team, other, mine))
+        if len(found) != 1:
+            continue
+        key, team, other, mine = found[0]
+        n_other = len(appear[team]) - 1
+        g[key] = list(mine)
+        done.append(dict(
+            row=g["row"], game=g, what=f"состав команды {team}",
+            value=("поставлен её постоянный состав: "
+                   + ", ".join(f"{nm} №{n}" if n else nm for n, nm in mine if nm)),
+            why=(f"в этом матче за обе команды записаны одни и те же игроки — состав "
+                 f"команды {other}; у команды {team} во всех остальных {n_other} матчах "
+                 f"файла один и тот же свой состав")))
 
     return done
 
