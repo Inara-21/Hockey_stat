@@ -81,7 +81,7 @@ children.push(new Table({
     new TableRow({ children: [
       cell(p(t("файлов проверено", { pt: 9, color: MUTED }), { align: AlignmentType.CENTER, after: 0 }), { w: NUM_W }),
       cell(p(t("матчей проверено", { pt: 9, color: MUTED }), { align: AlignmentType.CENTER, after: 0 }), { w: NUM_W }),
-      cell(p(t("найдено несостыковок", { pt: 9, color: MUTED }), { align: AlignmentType.CENTER, after: 0 }), { w: NUM_W }),
+      cell(p(t("найдено ошибок", { pt: 9, color: MUTED }), { align: AlignmentType.CENTER, after: 0 }), { w: NUM_W }),
     ]}),
   ],
 }));
@@ -170,6 +170,39 @@ data.blocks.forEach(b => {
   });
   children.push(new Table({ columnWidths: FW, width: { size: FW.reduce((a, b2) => a + b2), type: WidthType.DXA }, rows }));
 });
+
+// ---------------------------------------------------------------- вопросы
+const withQ = data.blocks.filter(b => b.questions && b.questions.length);
+if (withQ.length) {
+  children.push(H1("Вопросы — не ошибки, требуют подтверждения"));
+  children.push(p(t("Ошибкой это считать нельзя, пока не подтверждено правилами "
+                    + "соревнования. Ниже перечислено, где именно встречается.",
+                    { pt: 10, color: MUTED }), { after: 160 }));
+
+  const QW = [4200, CONTENT_W - 4200 - 4600, 4600];
+  const whats = [...new Set(withQ.flatMap(b => b.questions.map(q => q.what)))];
+  whats.forEach(what => {
+    children.push(p(t(what.charAt(0).toUpperCase() + what.slice(1), { pt: 11, b: true }),
+                    { before: 220, after: 60, keepNext: true }));
+    const rows = [new TableRow({ tableHeader: true, children: [
+      cell(p(t("Соревнование, месяц", { b: true, pt: 9 }), { after: 0 }), { w: QW[0], bg: HEAD_BG }),
+      cell(p(t("Что найдено", { b: true, pt: 9 }), { after: 0 }), { w: QW[1], bg: HEAD_BG }),
+      cell([p(t("Ответ организатора", { b: true, pt: 9 }), { after: 0 })], { w: QW[2], bg: HEAD_BG }),
+    ]})];
+    let i = 0;
+    withQ.forEach(b => {
+      b.questions.filter(q => q.what === what).forEach(q => {
+        const bg = i++ % 2 ? ZEBRA : undefined;
+        rows.push(new TableRow({ children: [
+          cell(lines(`${b.title}\n${b.period}`, { pt: 9 }), { w: QW[0], bg }),
+          cell(p(t(q.text, { pt: 9 }), { after: 0 }), { w: QW[1], bg }),
+          cell(p(t("", { pt: 9 }), { after: 0 }), { w: QW[2] }),
+        ]}));
+      });
+    });
+    children.push(new Table({ columnWidths: QW, width: { size: QW.reduce((a, b2) => a + b2), type: WidthType.DXA }, rows }));
+  });
+}
 
 // ---------------------------------------------------------------- документ
 const doc = new Document({

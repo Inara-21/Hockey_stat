@@ -47,10 +47,6 @@ THEMES = [
      ["составы команд перепутаны местами", "один состав за разные команды",
       "состав из игроков другой команды"],
      "Один и тот же состав записан за разные команды."),
-    ("Переходы игроков",
-     ["игроки выходят за разные команды", "игроки с разными номерами",
-      "игрок в разных командах", "игрок с разными номерами"],
-     "Игроки выступают за несколько команд. Требуется подтверждение организаторов."),
     ("Оформление составов",
      ["повтор игрового номера", "игрок без номера", "игрок без ФИО",
       "посторонние символы в ФИО", "состав больше обычного"],
@@ -115,9 +111,9 @@ def collect(path):
                 f"Состав не заполнен: команда А — {len(g['roster1'])} игроков, "
                 f"команда В — {len(g['roster2'])}.")
         if not g["judge"]:
-            add(QUESTION, g, "нет судьи", "Судья не указан.")
+            add(ERROR, g, "нет судьи", "Судья не указан.")
         if not g["secretary"]:
-            add(QUESTION, g, "нет секретаря", "Секретарь не указан.")
+            add(ERROR, g, "нет секретаря", "Секретарь не указан.")
 
         if not g["final_raw"]:
             add(ERROR, g, "пустой итоговый счёт", "Итоговый счёт не заполнен.")
@@ -147,11 +143,11 @@ def collect(path):
             tie_plus_one = sh == sa and (g["goals1"] - sh) + (g["goals2"] - sa) == 1
             if g["shootout"] or g["overtime"]:
                 if not tie_plus_one:
-                    add(QUESTION, g, "пометка не соответствует счёту",
+                    add(ERROR, g, "пометка не соответствует счёту",
                         "Стоит пометка о буллитах, но ничьей после основного времени "
                         "не было.")
             elif tie_plus_one:
-                add(QUESTION, g, "похоже на буллиты, но пометки нет",
+                add(ERROR, g, "похоже на буллиты, но пометки нет",
                     "После трёх периодов ничья, в итоге +1 гол — как у матчей с буллитами, "
                     "но пометки «Б Буллиты» нет. Буллиты или опечатка?")
             elif (g["goals1"], g["goals2"]) == (sa, sh):
@@ -305,7 +301,7 @@ def collect(path):
         lines_m = "; ".join(
             f"{nm} ({', '.join(f'{t} — {c}' for t, c in teams.most_common())})"
             for nm, teams in sorted(movers))
-        add(ERROR, None, "игроки выходят за разные команды",
+        add(QUESTION, None, "игроки выходят за разные команды",
             f"За разные команды выходят {len(movers)} игроков: {lines_m}. "
             f"Уточнить, верно ли это.")
 
@@ -314,7 +310,7 @@ def collect(path):
         lines_n = "; ".join(
             f"{nm} ({', '.join(f'№{n} — {c}' for n, c in nums.most_common())})"
             for nm, nums in sorted(renumbered))
-        add(ERROR, None, "игроки с разными номерами",
+        add(QUESTION, None, "игроки с разными номерами",
             f"У {len(renumbered)} игроков в разных матчах разные игровые номера: "
             f"{lines_n}. Номер меняется вместе с командой или это ошибка?")
 
@@ -343,7 +339,7 @@ def collect(path):
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             if difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.85:
-                add(QUESTION, None, "похожие названия команд",
+                add(ERROR, None, "похожие названия команд",
                     f"Названия «{a}» и «{b}» очень похожи — возможна опечатка.")
 
     # Плотность календаря (сколько матчей в день, пустые дни) не проверяем:
@@ -378,24 +374,26 @@ def collect(path):
 
 
 def render(all_summaries, all_problems, path):
-    """Компактный отчёт: реквизиты один раз на файл, дальше только находки.
+    """Отчёт: сначала ошибки по файлам, затем вопросы отдельным разделом.
 
-    Разряда «вопросы» нет — любое расхождение считается ошибкой; там, где
-    нужно уточнение, вопрос стоит прямо в тексте находки.
+    Ошибка — то, что данные противоречат сами себе. Вопрос — то, что ошибкой
+    считать нельзя, пока не подтверждено правилами соревнования.
     """
     L = []
     say = L.append
     today = datetime.date.today().strftime("%d.%m.%Y")
     total_games = sum(s["games"] for s in all_summaries)
+    errors = [q for q in all_problems if q["kind"] == ERROR]
+    questions = [q for q in all_problems if q["kind"] == QUESTION]
 
     say("=" * 78)
     say(f"ОТЧЁТ О ПРОВЕРКЕ ИСХОДНЫХ ДАННЫХ          Дата проверки: {today}")
     say("=" * 78)
     say("Данные проверены без внесения изменений.")
     say(f"Файлов: {len(all_summaries)}   матчей: {total_games}   "
-        f"ошибок: {len(all_problems)}")
+        f"ошибок: {len(errors)}   вопросов: {len(questions)}")
 
-    kinds = Counter(p["what"] for p in all_problems)
+    kinds = Counter(q["what"] for q in errors)
     if kinds:
         say("")
         say("=" * 78)
@@ -418,9 +416,10 @@ def render(all_summaries, all_problems, path):
         for n, title, whats, comment in sorted(blocks, key=lambda x: -x[0]):
             detail = ", ".join(f"{kinds[w]} — {w}" for w in whats if kinds.get(w))
             say("")
-            say(f"   {title}: {n} из {len(all_problems)}")
+            say(f"   {title}: {n} из {len(errors)}")
             say(f"      {detail}.")
-            say(f"      {comment}")
+            if comment:
+                say(f"      {comment}")
         other = {w: c for w, c in kinds.items() if w not in used}
         if other:
             say("")
@@ -428,8 +427,13 @@ def render(all_summaries, all_problems, path):
             say(f"      {', '.join(f'{c} — {w}' for w, c in other.items())}.")
 
     by_file = defaultdict(list)
-    for p in all_problems:
-        by_file[p["file"]].append(p)
+    for q in all_problems:
+        by_file[q["file"]].append(q)
+
+    say("")
+    say("=" * 78)
+    say("ОШИБКИ ПО ФАЙЛАМ")
+    say("=" * 78)
 
     for s in all_summaries:
         comps = list(s["comps"])
@@ -449,33 +453,63 @@ def render(all_summaries, all_problems, path):
                 + ", ".join(f"{t} ({r} строк)" for t, r in s["skipped"]))
         say("-" * 78)
 
-        group = by_file.get(s["file"], [])
+        group = [q for q in by_file.get(s["file"], []) if q["kind"] == ERROR]
         if not group:
             say("ошибок не найдено")
             continue
         say(f"ОШИБКИ ({len(group)}):")
         multi_comp = len(comps) > 1
-        for i, p in enumerate(group, 1):
-            g = p["game"]
+        for i, q in enumerate(group, 1):
+            g = q["game"]
             say("")
             if g is None:
-                say(f"{i}. {p['what']}")
-                say(f"   {p['text']}")
+                say(f"{i}. {q['what']}")
+                say(f"   {q['text']}")
                 continue
-            d = g["date"].strftime("%d.%m") if g["date"] else "—"
-            say(f"{i}. стр. {g['row']}   {d} {g['time'] or '—'}   "
+            dd = g["date"].strftime("%d.%m") if g["date"] else "—"
+            say(f"{i}. стр. {g['row']}   {dd} {g['time'] or '—'}   "
                 f"{g['team1'] or '—'} — {g['team2'] or '—'}"
                 + (f"   [{g['comp']}]" if multi_comp else ""))
             if g["final_raw"]:
                 mark = f" ({' '.join(g['final_notes'])})" if g["final_notes"] else ""
-                line = f"   итог {g['final_raw']}{mark}"
+                row = f"   итог {g['final_raw']}{mark}"
                 if g["periods_raw"]:
                     sh, sa = period_sums(g)
-                    line += f", периоды {' '.join(g['periods_raw'])}"
+                    row += f", периоды {' '.join(g['periods_raw'])}"
                     if sh is not None:
-                        line += f" = {sh}:{sa}"
-                say(line)
-            say(f"   {p['text']}")
+                        row += f" = {sh}:{sa}"
+                say(row)
+            say(f"   {q['text']}")
+
+    if questions:
+        say("")
+        say("=" * 78)
+        say("ВОПРОСЫ — НЕ ОШИБКИ, ТРЕБУЮТ ПОДТВЕРЖДЕНИЯ")
+        say("=" * 78)
+        say("")
+        say("Ошибкой это считать нельзя, пока не подтверждено правилами соревнования.")
+        say("Ниже перечислено, где именно встречается.")
+        by_what = defaultdict(list)
+        for q in questions:
+            by_what[q["what"]].append(q)
+        for what, items in by_what.items():
+            say("")
+            say("-" * 78)
+            say(what.upper())
+            say("-" * 78)
+            n = 0
+            for s in all_summaries:
+                mine = [q for q in items if q["file"] == s["file"]]
+                if not mine:
+                    continue
+                n += 1
+                period = ", ".join(f"{MONTHS[m]} {y}" for (c, y, m) in
+                                   sorted(s["breakdown"], key=lambda k: (k[1], k[2])))
+                comps = ", ".join(s["comps"]) if s["comps"] else "—"
+                say("")
+                say(f"{n}. {comps}, {period}")
+                for q in mine:
+                    say(f"   {q['text']}")
 
     total = Counter()
     for s in all_summaries:
@@ -493,14 +527,16 @@ def render(all_summaries, all_problems, path):
             say(f"  {comp:<{wcomp}}  {MONTHS[m] + ' ' + str(y):<16}  {n:>6}")
         say(f"  {'-' * wcomp}  {'-' * 16}  {'-' * 6}")
         say(f"  {'ИТОГО':<{wcomp}}  {'':<16}  {sum(total.values()):>6}")
+
     say("")
-    say(f"ИТОГО: матчей — {total_games}, ошибок — {len(all_problems)}")
+    say(f"ИТОГО: матчей — {total_games}, ошибок — {len(errors)}, "
+        f"вопросов — {len(questions)}")
     say("=" * 78)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
-    return len(all_problems), 0
+    return len(errors), len(questions)
 
 
 def main(args):
@@ -518,10 +554,12 @@ def main(args):
         games, problems, summary = collect(path)
         all_problems += problems
         all_summaries.append(summary)
-        print(f"  {os.path.basename(path)}: матчей {len(games)}, ошибок {len(problems)}")
+        e = sum(1 for q in problems if q["kind"] == ERROR)
+        print(f"  {os.path.basename(path)}: матчей {len(games)}, ошибок {e}, "
+              f"вопросов {len(problems) - e}")
 
-    e, _ = render(all_summaries, all_problems, OUT)
-    print(f"\nвсего ошибок: {e}")
+    e, q = render(all_summaries, all_problems, OUT)
+    print(f"\nвсего: ошибок {e}, вопросов {q}")
     print(f"отчёт: {OUT}")
     return 0
 
