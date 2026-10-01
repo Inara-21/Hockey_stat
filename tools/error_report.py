@@ -235,12 +235,13 @@ def collect(path):
     repaired = repair(games)
     problems = []
 
-    def add(kind, game, what, text, rows=None, fix=""):
-        """fix — предлагаемое исправление с вопросом о подтверждении; в отчёте
-        оно стоит в последнем столбце, где проверяющий отвечает."""
+    def add(kind, game, what, text, rows=None, fix="", ready=True):
+        """fix — то, что стоит в последнем столбце, где отвечает проверяющий:
+        предложенное исправление с вопросом о подтверждении (ready=True) или
+        вопрос без готового исправления (ready=False)."""
         problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text,
                              rows=sorted(rows) if rows else [], fix=fix,
-                             proposed=bool(fix)))
+                             proposed=bool(fix) and ready))
 
     for r in repaired:
         add(ERROR, r["game"], r["kind"], r["text"], fix=r["fix"])
@@ -334,11 +335,15 @@ def collect(path):
                     fix="Похоже на победу по буллитам: поставить пометку Б Буллиты. "
                         "Подтверждаете?")
             elif (g["goals1"], g["goals2"]) == (sa, sh):
+                by_periods = g["team1"] if sh > sa else g["team2"]
+                by_final = g["team1"] if g["goals1"] > g["goals2"] else g["team2"]
                 add(ERROR, g, "итоговый счёт записан наоборот",
-                    f"Сумма по периодам — {sh}:{sa}, а итог записан {g['goals1']}:{g['goals2']}: "
-                    f"те же числа, переставленные местами.",
-                    fix=f"Похоже, итог записан наоборот: должно быть {sh}:{sa} вместо "
-                        f"{g['goals1']}:{g['goals2']}. Подтверждаете?")
+                    f"Сумма по периодам — {sh}:{sa}, по ней победила команда {by_periods}. "
+                    f"Итоговый счёт записан {g['goals1']}:{g['goals2']}, по нему победила "
+                    f"команда {by_final}. Числа те же, но переставлены местами.",
+                    fix=f"Кто победил на самом деле — {by_periods} или {by_final}? Что записано "
+                        f"неверно: итоговый счёт, счёт по периодам или порядок команд?",
+                    ready=False)
             else:
                 add(ERROR, g, "счёт не сходится с периодами",
                     "Счёт не сходится с суммой по периодам. Ничьей после трёх периодов "
