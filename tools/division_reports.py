@@ -35,7 +35,7 @@ def main():
              if f.lower().endswith((".xlsx", ".xlsm", ".xls"))]
 
     # соревнование -> месяц -> (число матчей, список ошибок)
-    by_comp = defaultdict(lambda: defaultdict(lambda: {"games": 0, "errors": []}))
+    by_comp = defaultdict(lambda: defaultdict(lambda: {"games": 0, "errors": [], "restored": []}))
     for path in files:
         games, problems, s = collect(path)
         errors = [p for p in problems if p["kind"] == ERROR]
@@ -52,6 +52,14 @@ def main():
                 comp, y, m = months[0]
                 key = (y, m)
             by_comp[comp][key]["errors"].append(p)
+        for r in s.get("repaired", []):
+            g = r["game"]
+            if g["date"]:
+                key, comp = (g["date"].year, g["date"].month), g["comp"] or months[0][0]
+            else:
+                comp, y, m = months[0]
+                key = (y, m)
+            by_comp[comp][key]["restored"].append(r)
 
     os.makedirs(OUT, exist_ok=True)
     for old in os.listdir(OUT):
@@ -69,7 +77,9 @@ def main():
         say(comp)
         say("=" * 78)
         say(f"Проверка данных по матчам.   Дата проверки: {today}")
-        say(f"Проверено матчей: {total}.   Найдено ошибок: {total_err}.")
+        total_fix = sum(len(v["restored"]) for v in by_comp[comp].values())
+        say(f"Проверено матчей: {total}.   Найдено ошибок: {total_err}."
+            + (f"   Восстановлено по данным: {total_fix}." if total_fix else ""))
         say("")
         say("СВОДКА ПО ДИВИЗИОНУ")
         say("   Месяц            Матчей   Ошибок")
@@ -93,6 +103,15 @@ def main():
             say("-" * 78)
             say(f"{MONTHS[m].upper()} {y} — матчей {block['games']}, ошибок {len(block['errors'])}")
             say("-" * 78)
+            if block["restored"]:
+                say("Восстановлено по данным самого файла, в ошибки не включено:")
+                for r in block["restored"]:
+                    g = r["game"]
+                    d = g["date"].strftime("%d.%m.%Y") if g["date"] else "—"
+                    say(f"   Строка {r['row']}   {d}  {g['time'] or '—'}   "
+                        f"{g['team1'] or '—'} — {g['team2'] or '—'}")
+                    say(f"      {r['what']}: {r['value']}. Основание: {r['why']}.")
+                say("")
             if not block["errors"]:
                 say("Ошибок не найдено.")
                 continue

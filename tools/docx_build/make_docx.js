@@ -62,7 +62,13 @@ children.push(p(t("ОТЧЁТ О ПРОВЕРКЕ ИСХОДНЫХ ДАННЫХ"
 children.push(p(t("Чемпионат Регулярной хоккейной лиги 3х3", { pt: 12, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 40 }));
 children.push(p(t(`Дата проверки: ${data.date}   ·   проверено матчей: ${data.games}   ·   `
-                  + `найдено ошибок: ${data.errors}`, { pt: 10, color: MUTED }),
+                  + `найдено ошибок: ${data.errors}`
+                  + (data.restored ? `   ·   восстановлено по данным: ${data.restored}` : ""),
+                  { pt: 10, color: MUTED }),
+                { align: AlignmentType.CENTER, after: 80 }));
+children.push(p(t("Исходные файлы не изменялись. Если пропуск однозначно восстанавливается "
+                  + "по другим матчам того же файла, он в ошибки не включён и показан отдельно "
+                  + "в разделе своего дивизиона.", { pt: 9, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 240 }));
 
 // ---------------------------------------------------------------- вопросы
@@ -117,7 +123,8 @@ children.push(table(SW, sumRows));
 const FW = [900, 2600, 2400, 4400, CONTENT_W - 10300];
 data.divisions.forEach(div => {
   children.push(H1(div.comp, { pageBreak: true }));
-  children.push(p([t(`Проверено матчей: ${div.games}.   Найдено ошибок: ${div.errors}.`,
+  children.push(p([t(`Проверено матчей: ${div.games}.   Найдено ошибок: ${div.errors}.`
+                     + (div.restored ? `   Восстановлено по данным: ${div.restored}.` : ""),
                      { pt: 11, b: true })], { after: 60 }));
   children.push(p(t("Последняя колонка — для вашего ответа: напротив каждой строки впишите, "
                     + "как исправляем ошибку.", { pt: 9, color: MUTED }), { after: 160 }));
@@ -127,20 +134,38 @@ data.divisions.forEach(div => {
                       { pt: 11, b: true }), { before: 200, after: 80, keepNext: true }));
     if (!mon.findings.length) {
       children.push(p(t("Ошибок не найдено.", { pt: 10, i: true, color: "2E7D32" })));
-      return;
+    } else {
+      const rows = [headRow(FW, ["Стр.", "Матч", "Счёт", "Что не так", "Как исправляем"])];
+      mon.findings.forEach((f, i) => {
+        const bg = i % 2 ? ZEBRA : undefined;
+        rows.push(new TableRow({ children: [
+          cell(p(t(f.row || "—", { pt: 9, b: true }), { after: 0 }), { w: FW[0], bg }),
+          cell(lines(f.match || f.what, { pt: 9 }), { w: FW[1], bg }),
+          cell(lines(f.score || "—", { pt: 9, color: MUTED }), { w: FW[2], bg }),
+          cell(p(t(f.text, { pt: 9 }), { after: 0 }), { w: FW[3], bg }),
+          cell(p(t("", { pt: 9 }), { after: 0 }), { w: FW[4] }),
+        ]}));
+      });
+      children.push(table(FW, rows));
     }
-    const rows = [headRow(FW, ["Стр.", "Матч", "Счёт", "Что не так", "Как исправляем"])];
-    mon.findings.forEach((f, i) => {
-      const bg = i % 2 ? ZEBRA : undefined;
-      rows.push(new TableRow({ children: [
-        cell(p(t(f.row || "—", { pt: 9, b: true }), { after: 0 }), { w: FW[0], bg }),
-        cell(lines(f.match || f.what, { pt: 9 }), { w: FW[1], bg }),
-        cell(lines(f.score || "—", { pt: 9, color: MUTED }), { w: FW[2], bg }),
-        cell(p(t(f.text, { pt: 9 }), { after: 0 }), { w: FW[3], bg }),
-        cell(p(t("", { pt: 9 }), { after: 0 }), { w: FW[4] }),
-      ]}));
-    });
-    children.push(table(FW, rows));
+
+    if (mon.restored && mon.restored.length) {
+      children.push(p(t("Восстановлено по данным самого файла — в ошибки не включено. "
+                        + "Если восстановлено неверно, впишите правильное значение.",
+                        { pt: 9, i: true, color: MUTED }), { before: 160, after: 80, keepNext: true }));
+      const RW = [900, 2600, 4800, CONTENT_W - 8300];
+      const rrows = [headRow(RW, ["Стр.", "Матч", "Что восстановлено", "Откуда взято"])];
+      mon.restored.forEach((r, i) => {
+        const bg = i % 2 ? ZEBRA : undefined;
+        rrows.push(new TableRow({ children: [
+          cell(p(t(r.row, { pt: 9, b: true }), { after: 0 }), { w: RW[0], bg }),
+          cell(lines(r.match, { pt: 9 }), { w: RW[1], bg }),
+          cell(p(t(r.what, { pt: 9 }), { after: 0 }), { w: RW[2], bg }),
+          cell(p(t(r.why, { pt: 9 }), { after: 0 }), { w: RW[3], bg }),
+        ]}));
+      });
+      children.push(table(RW, rrows));
+    }
   });
 });
 
