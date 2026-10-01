@@ -2,8 +2,8 @@
 """Общий отчёт об ошибках по всем исходным файлам.
 
 Проверяет каждый файл из папки (по умолчанию data/new) и собирает единый
-отчёт. Исходные файлы не меняются никогда: часть пропусков достраивается
-только внутри отчёта, по самим же данным, и выносится отдельным списком.
+отчёт. Исходные файлы не меняются никогда. Если исправление ошибки однозначно
+следует из самих данных, оно предлагается в тексте ошибки на подтверждение.
 
 Запуск:
     python3 tools/error_report.py                 # все файлы из data/new
@@ -113,11 +113,14 @@ NAME_PREFIX = re.compile(r"^\s*\d+\s*[).．.]\s*")
 
 
 def repair(games):
-    """Достраивает пропуски по самим данным. Возвращает список восстановленного.
+    """Находит ошибки, исправление которых однозначно следует из самого файла.
 
-    Правим только то, что однозначно выводится из файла: если в игровой день
-    у всех остальных матчей один и тот же судья, то и у этого матча он тот же.
-    Если значение выводится неоднозначно, оставляем пропуск как ошибку.
+    Например, если в игровой день у всех остальных матчей один и тот же судья,
+    то и у этого матча он тот же. Каждая такая ошибка всё равно попадает в
+    отчёт: с предложенным исправлением и вопросом, подтверждает ли его
+    проверяющий. Дальнейшие проверки идут по исправленным данным, чтобы одна
+    ошибка не описывалась дважды. Если исправление неоднозначно, ничего не
+    меняем — пропуск остаётся обычной ошибкой.
     """
     done = []
 
@@ -143,8 +146,11 @@ def repair(games):
             if len(cand) == 1:
                 value = next(iter(cand))
                 g[field] = value
-                done.append(dict(row=g["row"], game=g, what=what, value=value,
-                                 why="в остальных матчах этого игрового дня указан он же"))
+                Cap = what.capitalize()
+                done.append(dict(game=g, kind=f"нет {'судьи' if field == 'judge' else 'секретаря'}",
+                                 text=f"{Cap} не указан. Во всех остальных матчах этого игрового "
+                                      f"дня {what} — {value}.",
+                                 fix=f"Очевидное исправление: {what} — {value}. Подтверждаете?"))
 
         for side, (team, roster) in enumerate(
                 ((g["team1"], g["roster1"]), (g["team2"], g["roster2"]))):
@@ -154,19 +160,24 @@ def repair(games):
                 if nm and NAME_PREFIX.match(nm):
                     clean = NAME_PREFIX.sub("", nm).strip()
                     if clean:
-                        done.append(dict(row=g["row"], game=g, what="ФИО", value=clean,
-                                         why=f"убрана нумерация списка перед ФИО, в файле записано: {nm}"))
+                        done.append(dict(game=g, kind="посторонние символы в ФИО",
+                                         text=f"В составе команды {team} перед ФИО стоит нумерация "
+                                              f"списка: {nm}.",
+                                         fix=f"Очевидное исправление: {clean}. Подтверждаете?"))
                         nm = clean
                 if nm and not n and len(num_of.get((team, nm), ())) == 1:
                     n = next(iter(num_of[(team, nm)]))
-                    done.append(dict(row=g["row"], game=g, what="номер игрока",
-                                     value=f"{nm} ({team}) — {n}",
-                                     why="в других матчах у него везде этот номер"))
+                    done.append(dict(game=g, kind="игрок без номера",
+                                     text=f"{nm} ({team}) — не указан игровой номер. Во всех "
+                                          f"остальных матчах за эту команду у него номер {n}.",
+                                     fix=f"Очевидное исправление: номер {n}. Подтверждаете?"))
                 elif n and not nm and len(name_of.get((team, n), ())) == 1:
                     nm = next(iter(name_of[(team, n)]))
-                    done.append(dict(row=g["row"], game=g, what="ФИО игрока",
-                                     value=f"{team}, номер {n} — {nm}",
-                                     why="в других матчах под этим номером выступает он"))
+                    done.append(dict(game=g, kind="игрок без ФИО",
+                                     text=f"В составе команды {team} у номера {n} не указано ФИО. "
+                                          f"Во всех остальных матчах за эту команду под этим "
+                                          f"номером играет {nm}.",
+                                     fix=f"Очевидное исправление: {nm}. Подтверждаете?"))
                 fixed.append((n, nm))
             g["roster1" if side == 0 else "roster2"] = fixed
 
@@ -206,12 +217,13 @@ def repair(games):
         n_other = len(appear[team]) - 1
         g[key] = list(mine)
         done.append(dict(
-            row=g["row"], game=g, what=f"состав команды {team}",
-            value=("поставлен её постоянный состав: "
-                   + ", ".join(f"{nm} №{n}" if n else nm for n, nm in mine if nm)),
-            why=(f"в этом матче за обе команды записаны одни и те же игроки — состав "
-                 f"команды {other}; у команды {team} во всех остальных {n_other} матчах "
-                 f"файла один и тот же свой состав")))
+            game=g, kind="один состав за разные команды",
+            text=(f"За обе команды записаны одни и те же игроки — состав команды {other}. "
+                  f"У команды {team} во всех остальных {n_other} матчах файла один и тот же "
+                  f"свой состав: "
+                  + ", ".join(f"{nm} №{n}" if n else nm for n, nm in mine if nm) + "."),
+            fix=(f"Очевидное исправление: записать команде {team} её постоянный состав. "
+                 f"Подтверждаете?")))
 
     return done
 
@@ -226,6 +238,11 @@ def collect(path):
     def add(kind, game, what, text, rows=None):
         problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text,
                              rows=sorted(rows) if rows else []))
+
+    for r in repaired:
+        add(ERROR, r["game"], r["kind"], r["text"])
+        problems[-1]["proposed"] = True
+        problems[-1]["fix"] = r["fix"]
 
     # Повторяющиеся дефекты состава копим и выводим одной записью со списком
     # матчей: иначе одна и та же проблема размножается на десятки находок.
@@ -675,11 +692,11 @@ def render(all_summaries, all_problems, path):
     say("=" * 78)
     say(f"ОТЧЁТ О ПРОВЕРКЕ ИСХОДНЫХ ДАННЫХ          Дата проверки: {today}")
     say("=" * 78)
-    restored = sum(len(x.get("repaired", [])) for x in all_summaries)
+    proposed = sum(1 for q in errors if q.get("proposed"))
     say("Исходные файлы не изменялись.")
     say(f"Файлов: {len(all_summaries)}   матчей: {total_games}   "
-        f"ошибок: {len(errors)}   вопросов: {len(questions)}   "
-        f"восстановлено по данным: {restored}")
+        f"ошибок: {len(errors)} (из них с готовым исправлением на подтверждение: "
+        f"{proposed})   вопросов: {len(questions)}")
 
     kinds = Counter(q["what"] for q in errors)
     if kinds:
@@ -741,13 +758,6 @@ def render(all_summaries, all_problems, path):
                 + ", ".join(f"{t} ({r} строк)" for t, r in s["skipped"]))
         say("-" * 78)
 
-        fixed = s.get("repaired", [])
-        if fixed:
-            say(f"ВОССТАНОВЛЕНО ПО ДАННЫМ ({len(fixed)}) — в ошибки не включено:")
-            for r in fixed:
-                say(f"   стр. {r['row']}   {r['what']}: {r['value']} — {r['why']}")
-            say("")
-
         group = [q for q in by_file.get(s["file"], []) if q["kind"] == ERROR]
         if not group:
             say("ошибок не найдено")
@@ -776,6 +786,8 @@ def render(all_summaries, all_problems, path):
                         row += f" = {sh}:{sa}"
                 say(row)
             say(f"   {q['text']}")
+            if q.get("fix"):
+                say(f"   >> {q['fix']}")
 
     if questions:
         say("")
