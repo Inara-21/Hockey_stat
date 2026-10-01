@@ -5,7 +5,7 @@ const path = require("path");
 const d = require("docx");
 const { Document, Packer, Paragraph, TextRun, AlignmentType, Table, TableRow,
         TableCell, WidthType, BorderStyle, ShadingType, Footer, PageNumber,
-        VerticalAlign, PageOrientation, PageBreak } = d;
+        VerticalAlign, PageOrientation, PageBreak, VerticalMergeType } = d;
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const data = JSON.parse(fs.readFileSync(path.join(ROOT, "reports", "report_data.json"), "utf8"));
@@ -61,77 +61,44 @@ children.push(p(t("ОТЧЁТ О ПРОВЕРКЕ ИСХОДНЫХ ДАННЫХ"
                 { align: AlignmentType.CENTER, after: 60 }));
 children.push(p(t("Чемпионат Регулярной хоккейной лиги 3х3", { pt: 12, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 40 }));
-children.push(p(t(`Дата проверки: ${data.date}   ·   проверено матчей: ${data.games}   ·   `
-                  + `найдено ошибок: ${data.errors}`
-                  + (data.proposed ? ` (из них с готовым исправлением: ${data.proposed})` : ""),
-                  { pt: 10, color: MUTED }),
+children.push(p(t(`Дата проверки: ${data.date}`, { pt: 10, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 80 }));
-children.push(p(t("Исходные файлы не изменялись. Если исправление ошибки следует из самих "
-                  + "данных, оно предложено в последнем столбце таблицы с вопросом, "
-                  + "подтверждаете ли вы его.", { pt: 9, color: MUTED }),
+children.push(p(t("Где исправление следует из самих данных, оно предложено в последнем столбце "
+                  + "таблицы — подтвердите его или отклоните.", { pt: 9, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 240 }));
 
 // ---------------------------------------------------------------- вопросы
 if (data.questions.length) {
   children.push(H1("Вопросы ко всем дивизионам"));
-  children.push(p(t("Это не ошибки. Данные записаны так во многих матчах, и мы не знаем, "
-                    + "допускается ли это правилами соревнования. Просим ответить по каждому "
-                    + "пункту.", { pt: 10 }), { after: 160 }));
-
   const QW = [3800, CONTENT_W - 3800 - 4600, 4600];
   data.questions.forEach(q => {
     children.push(p(t(q.ask, { pt: 11, b: true }), { before: 240, after: 100, keepNext: true }));
-    const rows = [headRow(QW, ["Соревнование, месяц", "Что найдено", "Ответ организатора"])];
+    const rows = [headRow(QW, ["Соревнование, месяц", "Строки", "Ответ организатора"])];
     q.items.forEach((it, i) => {
       const bg = i % 2 ? ZEBRA : undefined;
       rows.push(new TableRow({ children: [
         cell(lines(`${it.comp}\n${it.period}`, { pt: 9 }), { w: QW[0], bg }),
-        cell(p(t(it.text, { pt: 9 }), { after: 0 }), { w: QW[1], bg }),
-        cell(p(t("", { pt: 9 }), { after: 0 }), { w: QW[2] }),
+        cell(p(t(it.rows || "—", { pt: 9 }), { after: 0 }), { w: QW[1], bg }),
+        new TableCell({
+          width: { size: QW[2], type: WidthType.DXA }, borders,
+          verticalMerge: i === 0 ? VerticalMergeType.RESTART : VerticalMergeType.CONTINUE,
+          margins: { top: 60, bottom: 60, left: 90, right: 90 },
+          children: [p(t("", { pt: 9 }), { after: 0 })] }),
       ]}));
     });
     children.push(table(QW, rows));
   });
 }
 
-// ---------------------------------------------------------------- сводка
-children.push(H1("Сводка: сколько проверено и сколько найдено"));
-children.push(p(t("Сверьте количество матчей со своими данными. Если расходится — значит, "
-                  + "в исходной таблице не все игры или есть лишние.", { pt: 10, color: MUTED }),
-                { after: 140 }));
-
-const SW = [6000, 3400, 3000, CONTENT_W - 12400];
-const sumRows = [headRow(SW, ["Соревнование", "Месяц", "Матчей", "Ошибок"])];
-data.summary.forEach((r, i) => {
-  const bg = i % 2 ? ZEBRA : undefined;
-  sumRows.push(new TableRow({ children: [
-    cell(p(t(r.comp, { pt: 10 }), { after: 0 }), { w: SW[0], bg }),
-    cell(p(t(r.month, { pt: 10 }), { after: 0 }), { w: SW[1], bg }),
-    cell(p(t(String(r.games), { pt: 10 }), { align: AlignmentType.RIGHT, after: 0 }), { w: SW[2], bg }),
-    cell(p(t(String(r.errors), { pt: 10 }), { align: AlignmentType.RIGHT, after: 0 }), { w: SW[3], bg }),
-  ]}));
-});
-sumRows.push(new TableRow({ children: [
-  cell(p(t("ИТОГО", { b: true, pt: 10 }), { after: 0 }), { w: SW[0], bg: HEAD_BG }),
-  cell(p(t("", { pt: 10 }), { after: 0 }), { w: SW[1], bg: HEAD_BG }),
-  cell(p(t(String(data.games), { b: true, pt: 10 }), { align: AlignmentType.RIGHT, after: 0 }), { w: SW[2], bg: HEAD_BG }),
-  cell(p(t(String(data.errors), { b: true, pt: 10 }), { align: AlignmentType.RIGHT, after: 0 }), { w: SW[3], bg: HEAD_BG }),
-]}));
-children.push(table(SW, sumRows));
-
 // ---------------------------------------------------------------- дивизионы
 const FW = [900, 2600, 2400, 4400, CONTENT_W - 10300];
 data.divisions.forEach(div => {
   children.push(H1(div.comp, { pageBreak: true }));
-  children.push(p([t(`Проверено матчей: ${div.games}.   Найдено ошибок: ${div.errors}.`
-                     + (div.proposed ? `   Из них с готовым исправлением: ${div.proposed}.` : ""),
-                     { pt: 11, b: true })], { after: 60 }));
-  children.push(p(t("Последняя колонка — для вашего ответа: напротив каждой строки впишите, "
-                    + "как исправляем ошибку. Где в ней уже предложено исправление или задан "
-                    + "вопрос, ответьте на него.", { pt: 9, color: MUTED }), { after: 160 }));
+  children.push(p(t("В последнем столбце впишите, как исправляем. Если там уже есть вопрос — "
+                    + "ответьте на него.", { pt: 9, color: MUTED }), { after: 160 }));
 
   div.months.forEach(mon => {
-    children.push(p(t(`${mon.label} — матчей ${mon.games}, ошибок ${mon.errors}`,
+    children.push(p(t(mon.label.charAt(0).toUpperCase() + mon.label.slice(1),
                       { pt: 11, b: true }), { before: 200, after: 80, keepNext: true }));
     if (!mon.findings.length) {
       children.push(p(t("Ошибок не найдено.", { pt: 10, i: true, color: "2E7D32" })));
@@ -152,6 +119,32 @@ data.divisions.forEach(div => {
 
   });
 });
+
+// ---------------------------------------------------------------- количество игр
+children.push(H1("Количество игр", { pageBreak: true }));
+{
+  const first = 6000;
+  const rest = Math.floor((CONTENT_W - first) / (data.months.length + 1));
+  const GW = [first, ...data.months.map(() => rest), CONTENT_W - first - rest * data.months.length];
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const num = (v, o = {}) => p(t(String(v), { pt: 10, ...o }), { align: AlignmentType.RIGHT, after: 0 });
+  const rows = [headRow(GW, ["Соревнование", ...data.months.map(cap), "Всего"])];
+  data.games_table.forEach((r, i) => {
+    const bg = i % 2 ? ZEBRA : undefined;
+    rows.push(new TableRow({ children: [
+      cell(p(t(r.comp, { pt: 10 }), { after: 0 }), { w: GW[0], bg }),
+      ...data.months.map((m, j) => cell(num(r.by_month[m] || 0), { w: GW[j + 1], bg })),
+      cell(num(r.total, { b: true }), { w: GW[GW.length - 1], bg }),
+    ]}));
+  });
+  rows.push(new TableRow({ children: [
+    cell(p(t("Итого", { pt: 10, b: true }), { after: 0 }), { w: GW[0], bg: HEAD_BG }),
+    ...data.months.map((m, j) => cell(num(data.games_table.reduce((a, r) => a + (r.by_month[m] || 0), 0), { b: true }),
+                                      { w: GW[j + 1], bg: HEAD_BG })),
+    cell(num(data.games, { b: true }), { w: GW[GW.length - 1], bg: HEAD_BG }),
+  ]}));
+  children.push(table(GW, rows));
+}
 
 // ---------------------------------------------------------------- документ
 const doc = new Document({

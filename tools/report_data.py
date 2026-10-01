@@ -8,7 +8,7 @@ import datetime, json, os, re, sys
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from error_report import (collect, period_sums, SRC_DIR, MONTHS, ERROR,
+from error_report import (collect, period_sums, plural, SRC_DIR, MONTHS, ERROR,
                           QUESTION, ASK, DEFAULT_ASK)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,6 +20,19 @@ def fmt_rows(rows, limit=12):
         return ""
     shown = ", ".join(str(r) for r in rows[:limit])
     return shown + (f"\nи ещё {len(rows) - limit}" if len(rows) > limit else "")
+
+
+def q_rows(rows, total, limit=15):
+    """Строки для вопроса: все, если их немного, иначе начало списка и сколько ещё."""
+    if not rows:
+        return ""
+    if len(rows) == total:
+        return f"все матчи ({total})"
+    if len(rows) <= 20:
+        return ", ".join(str(r) for r in rows)
+    word = plural(len(rows), "матч", "матча", "матчей")
+    return (f"{len(rows)} {word}: " + ", ".join(str(r) for r in rows[:limit])
+            + f" и ещё {len(rows) - limit}")
 
 
 def finding(p):
@@ -67,8 +80,10 @@ def main():
             if p["kind"] == ERROR:
                 divisions[comp][key]["errors"].append(p)
             else:
+                total = s["breakdown"].get((comp, key[0], key[1]), s["games"])
                 questions[p["what"]].append(dict(
-                    comp=comp, period=f"{MONTHS[key[1]]} {key[0]}", text=p["text"]))
+                    comp=comp, period=f"{MONTHS[key[1]]} {key[0]}", text=p["text"],
+                    rows=q_rows(p.get("rows") or [], total)))
 
     div_blocks, summary = [], []
     total_games = total_errors = total_proposed = 0
@@ -99,6 +114,11 @@ def main():
         files=n_files, games=total_games, errors=total_errors, proposed=total_proposed,
         questions_total=sum(len(q["items"]) for q in q_blocks),
         questions=q_blocks, summary=summary, divisions=div_blocks,
+        months=[f"{MONTHS[m]} {y}" for (y, m) in sorted({k for c in divisions for k in divisions[c]})],
+        games_table=[dict(comp=c, by_month={f"{MONTHS[m]} {y}": divisions[c][(y, m)]["games"]
+                                            for (y, m) in divisions[c]},
+                          total=sum(b["games"] for b in divisions[c].values()))
+                     for c in sorted(divisions)],
     )
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
