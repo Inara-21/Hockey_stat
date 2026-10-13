@@ -225,6 +225,26 @@ def repair(games):
     return done
 
 
+def find_home(fname, teams, mg):
+    """Файл того же месяца, где эти команды играют постоянно.
+    -> (соревнование, сколько из матчей mg в нём не найдено) или None."""
+    month = fname[:7]
+    for f in sorted(os.listdir(SRC_DIR)):
+        if not f.startswith(month) or f == fname or not f.endswith(".xlsx"):
+            continue
+        games, _ = read_workbook(os.path.join(SRC_DIR, f))
+        count = Counter(t for g in games for t in (g["team1"], g["team2"]))
+        if all(count[t] >= 10 for t in teams):
+            def found(m):
+                return any({g["team1"], g["team2"]} == {m["team1"], m["team2"]} and
+                           ((g["date"], g["time"]) == (m["date"], m["time"]) or
+                            (g["final_raw"], g["periods_raw"], g["team1"]) ==
+                            (m["final_raw"], m["periods_raw"], m["team1"]))
+                           for g in games)
+            return games[0]["comp"], sum(1 for m in mg if not found(m))
+    return None
+
+
 def collect(path):
     """-> (games, problems, summary). problems — список словарей."""
     games, skipped = read_workbook(path)
@@ -246,12 +266,31 @@ def collect(path):
     if corr["misplaced"]:
         mg = [m["game"] for m in corr["misplaced"]]
         teams = sorted({t for g in mg for t in (g["team1"], g["team2"])})
-        add(ERROR, None, "матчи не из этого дивизиона",
-            f"Матчи команд {', '.join(teams)} — по ответу проверяющих попали в этот файл по "
-            f"ошибке. В файле другого дивизиона этих матчей нет: там в этот день у этих команд "
-            f"другие матчи, с другим временем и счётом.",
-            rows=[g["row"] for g in mg],
-            fix="Перенести эти матчи в файл другого дивизиона или удалить совсем?", ready=False)
+        text = (f"Матчи команд {', '.join(teams)} — по ответу проверяющих попали в этот файл "
+                f"по ошибке.")
+        # Сколько матчей в этот день против обычного — видно, что они лишние.
+        per_day = Counter(g["date"] for g in all_games)
+        typical = Counter(per_day.values()).most_common(1)[0][0]
+        for d in sorted({g["date"] for g in mg}):
+            if per_day[d] - typical == sum(1 for g in mg if g["date"] == d):
+                text += (f" {d.strftime('%d.%m')} в файле {per_day[d]} матчей, а в остальные дни "
+                         f"обычно по {typical}: эти {per_day[d] - typical} лишние.")
+        # Где эти команды играют на самом деле и есть ли там эти матчи.
+        home = find_home(fname, teams, mg)
+        fix = "Удаляем эти матчи из этого файла?"
+        if home:
+            comp, missing = home
+            comp_gen = comp.replace("Конференция", "Конференции", 1)
+            if missing == len(mg):
+                text += (f" Эти команды выступают в соревновании {comp}, но в его файле за этот "
+                         f"месяц таких матчей нет — ни с той же датой и временем, ни с тем же "
+                         f"счётом. Удалять их бесследно нельзя.")
+                fix = (f"Удаляем эти матчи из этого файла и переносим в файл {comp_gen}? "
+                       f"Если их не должно быть нигде — напишите.")
+            else:
+                text += f" В файле {comp_gen} есть {len(mg) - missing} из них."
+        add(ERROR, None, "матчи не из этого дивизиона", text,
+            rows=[g["row"] for g in mg], fix=fix, ready=False)
         for m in corr["misplaced"]:
             problems[-1].setdefault("games", []).append(m["game"])
 

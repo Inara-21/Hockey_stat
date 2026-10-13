@@ -16,7 +16,6 @@ data/corrections (ответы проверяющих), заново прове�
 """
 import copy
 import os
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +24,6 @@ from openpyxl.comments import Comment
 from openpyxl.styles import PatternFill
 
 import corrections
-import report_data
 from error_report import collect, period_sums, ERROR, SRC_DIR
 from hockey_data import read_workbook, norm, parse_player, FIRST_COL
 
@@ -178,16 +176,6 @@ def build(fname):
     wb.save(dst)
     errors = sum(1 for p in problems if p["kind"] == ERROR)
 
-    # Отчёт об оставшихся ошибках — рядом с файлом.
-    base = os.path.splitext(fname)[0]
-    js = os.path.join(OUT_DIR, f".{base}.json")
-    report_data.main([dst], out=js, title="ОСТАВШИЕСЯ ОШИБКИ",
-                     note=f"Исправленный файл {fname}: правки проверяющих внесены, "
-                          f"ниже — что осталось исправить")
-    docx = os.path.join(OUT_DIR, f"{base}_ostavshiesya_oshibki.docx")
-    subprocess.run(["node", os.path.join(ROOT, "tools", "docx_build", "make_docx.js"), js, docx],
-                   check=True, stdout=subprocess.DEVNULL)
-    os.remove(js)
     return dict(file=fname, fixes=len(corr["applied"]), errors=errors, marked=marked,
                 misplaced=len(corr["misplaced"]))
 
