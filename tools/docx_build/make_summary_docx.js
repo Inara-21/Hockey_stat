@@ -32,18 +32,21 @@ const headRow = (w, titles) => new TableRow({ tableHeader: true,
   children: titles.map((x, i) => cell(p(t(x, { b: true, pt: 9 }), { after: 0 }), { w: w[i], bg: HEAD_BG })) });
 const table = (w, rows) => new Table({ columnWidths: w, width: { size: w.reduce((a, b) => a + b), type: WidthType.DXA }, rows });
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const status = f => f.clean ? (f.answered ? "Правки проверяющих внесены — ошибок нет" : "Ошибок нет")
+                            : (f.answered ? "Правки проверяющих внесены, остались ошибки"
+                                          : "Ответов проверяющих пока нет — ошибки в разделе дивизиона");
 
 const children = [];
 // ------------------------------------------------------------ титул
-children.push(p(t("СВОДНЫЙ ОТЧЁТ ПО ИСПРАВЛЕННЫМ ФАЙЛАМ", { pt: 20, b: true, color: ACCENT }), { align: AlignmentType.CENTER, after: 60 }));
-children.push(p(t("Чемпионат Регулярной хоккейной лиги 3х3", { pt: 12, color: MUTED }), { align: AlignmentType.CENTER, after: 40 }));
+children.push(p(t("СВОДНЫЙ ОТЧЁТ ОБ ОШИБКАХ", { pt: 20, b: true, color: ACCENT }), { align: AlignmentType.CENTER, after: 60 }));
+children.push(p(t(`Чемпионат Регулярной хоккейной лиги 3х3 · ${data.months.join(", ")}`, { pt: 12, color: MUTED }), { align: AlignmentType.CENTER, after: 40 }));
 children.push(p(t(`Дата: ${data.date}`, { pt: 10, color: MUTED }), { align: AlignmentType.CENTER, after: 200 }));
 
 // ------------------------------------------------------------ итог по файлам
 children.push(H1("Итог по файлам"));
 const clean = data.files.filter(f => f.clean);
 if (clean.length) {
-  children.push(p(t("В этих файлах все ошибки исправлены, ошибок нет:", { pt: 10, b: true, color: GREEN }), { after: 60 }));
+  children.push(p(t("В этих файлах ошибок нет:", { pt: 10, b: true, color: GREEN }), { after: 60 }));
   clean.forEach(f => children.push(p(t(`${f.file} — ${f.comp}, ${f.month}`, { pt: 10 }), { after: 30 })));
 }
 const FW0 = [3600, 5400, 2400, CONTENT_W - 11400];
@@ -52,23 +55,21 @@ data.files.forEach((f, i) => frows.push(new TableRow({ children: [
   cell(p(t(f.file, { pt: 9 }), { after: 0 }), { w: FW0[0], bg: i % 2 ? ZEBRA : undefined }),
   cell(p(t(f.comp, { pt: 9 }), { after: 0 }), { w: FW0[1], bg: i % 2 ? ZEBRA : undefined }),
   cell(p(t(f.month, { pt: 9 }), { after: 0 }), { w: FW0[2], bg: i % 2 ? ZEBRA : undefined }),
-  cell(p(t(f.clean ? "Ошибок нет — всё исправлено" : "Остались ошибки — см. раздел дивизиона",
-           { pt: 9, b: true, color: f.clean ? GREEN : "B45309" }), { after: 0 }), { w: FW0[3], bg: i % 2 ? ZEBRA : undefined }),
+  cell(p(t(status(f), { pt: 9, b: true, color: f.clean ? GREEN : "B45309" }), { after: 0 }), { w: FW0[3], bg: i % 2 ? ZEBRA : undefined }),
 ]})));
 children.push(p([], { after: 80 }));
 children.push(table(FW0, frows));
 
 // ------------------------------------------------------------ примечания
 children.push(H1("Примечания"));
-children.push(p([t("1. Исправленные файлы прилагаются. ", { b: true }),
-  t("Правки проверяющих в них уже внесены. Исправленные ячейки выделены зелёным, ячейки с оставшимися "
-    + "ошибками — жёлтым. Что было и что не так — в примечании к ячейке: в углу ячейки красный "
-    + "треугольник, текст виден при наведении.")], { after: 120 }));
+children.push(p([t("1. ", { b: true }),
+  t("По ЗАПАДУ и ВОСТОКУ ответы проверяющих на отчёт от 01.10.2026 уже внесены — в отчёте только то, "
+    + "что осталось. По ЦЕНТРУ ответов пока нет — указаны все найденные ошибки.")], { after: 120 }));
 children.push(p([t("2. Ошибки в составах систематические. ", { b: true }),
-  t("Похоже, составы команд копировались из матча в матч: у каждой команды ниже один и тот же состав "
-    + "во всех матчах, поэтому лишний игрок повторяется в каждом её матче. Исправлять каждый матч не "
-    + "нужно — достаточно прислать верные составы этих команд с игровыми номерами. Исправления во все "
-    + "матчи мы внесём сами.")], { after: 120 }));
+  t("Похоже, составы команд копировались из матча в матч, поэтому одна и та же ошибка повторяется во "
+    + "всех матчах команды. Исправлять каждый матч не нужно — достаточно прислать верные составы команд "
+    + "с игровыми номерами: они приведены в разделах дивизионов в таблицах Составы команд, ошибочные "
+    + "строки выделены. Исправления во все матчи мы внесём сами.")], { after: 120 }));
 
 // ------------------------------------------------------------ дивизионы
 const RW = [2600, 7200, CONTENT_W - 9800];
@@ -77,17 +78,17 @@ data.divisions.forEach(div => {
   children.push(H1(div.comp, { pageBreak: true }));
   if (div.teams.length) {
     children.push(H2("Составы команд"));
-    children.push(p(t((div.all_same ? `Составы этих команд одинаковые во всех матчах (${div.months_text}). ` : "")
-      + "Выделенный игрок записан сразу за две команды, а выступать может только за одну. "
-      + "Впишите верный состав команды — мы внесём его во все матчи.", { pt: 9, color: MUTED }), { after: 100 }));
+    children.push(p(t("Выделены игроки, записанные сразу за несколько команд (выступать можно только за одну), "
+      + "а также игроки без номера и с повторяющимся номером. Впишите верный состав команды — мы внесём "
+      + "его во все матчи.", { pt: 9, color: MUTED }), { after: 100 }));
     const rows = [headRow(RW, ["Команда", "Состав в файле", "Верный состав (ФИО и номер)"])];
     div.teams.forEach((tm, i) => {
       const paras = [];
       tm.rosters.forEach((r, k) => {
-        if (tm.rosters.length > 1) paras.push(p(t(`В матчах: ${r.months.join(", ")}`, { pt: 9, i: true, color: MUTED }), { before: k ? 80 : 0, after: 20 }));
+        paras.push(p(t(r.label, { pt: 9, i: true, color: MUTED }), { before: k ? 100 : 0, after: 20 }));
         r.players.forEach(pl => paras.push(new Paragraph({ spacing: { after: 0 },
           shading: pl.flag ? { type: ShadingType.CLEAR, color: "auto", fill: MARK_BG } : undefined,
-          children: [t(pl.text, { pt: 9, b: pl.flag })].concat(pl.flag ? [t(`  — записан также за ${pl.also}`, { pt: 9, color: "B45309" })] : []) })));
+          children: [t(pl.text, { pt: 9, b: pl.flag })].concat(pl.flag ? [t(`  — ${pl.note}`, { pt: 9, color: "B45309" })] : []) })));
       });
       rows.push(new TableRow({ children: [
         cell(p(t(tm.team, { pt: 10, b: true }), { after: 0 }), { w: RW[0], bg: i % 2 ? ZEBRA : undefined }),
@@ -97,10 +98,14 @@ data.divisions.forEach(div => {
     });
     children.push(table(RW, rows));
   }
-  if (div.others.length) {
+  if (div.others.some(o => o.findings.length)) {
     children.push(H2(div.teams.length ? "Другие ошибки" : "Ошибки"));
     div.others.forEach(o => {
       children.push(p(t(cap(o.month), { pt: 10, b: true }), { before: 120, after: 60, keepNext: true }));
+      if (!o.findings.length) {
+        children.push(p(t("Ошибок нет.", { pt: 10, i: true, color: GREEN })));
+        return;
+      }
       const rows = [headRow(FW, ["Стр.", "Матч", "Счёт", "Что не так", "Как исправляем"])];
       o.findings.forEach((f, i) => {
         const bg = i % 2 ? ZEBRA : undefined;
@@ -146,6 +151,12 @@ if (data.misplaced_total)
   children.push(p(t(`В итог не включены матчи под вопросом: ${data.misplaced_total} — см. раздел Конференция ЗАПАД (2 Дивизион).`,
     { pt: 9, color: MUTED }), { before: 80 }));
 
+// ------------------------------------------------------------ сентябрь
+children.push(H1("Ждём данные за сентябрь"));
+children.push(p(t("Не хватает матчей за сентябрь 2026 по всем дивизионам. Ждём файлы — после получения "
+  + "проверим их так же.", { pt: 11, b: true }), { after: 80 }));
+data.comps.forEach(c => children.push(p(t(`${c} — сентябрь 2026: нет данных`, { pt: 10 }), { after: 30 })));
+
 const doc = new Document({
   styles: { default: { document: { run: { font: FONT, size: sz(10), color: INK } } } },
   sections: [{ properties: { page: { size: { width: 11906, height: 16838, orientation: PageOrientation.LANDSCAPE },
@@ -154,5 +165,5 @@ const doc = new Document({
       children: [new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: sz(9), color: MUTED })] })] }) },
     children }],
 });
-const out = path.join(ROOT, "reports", "Svodny_otchet_ispravlennye.docx");
+const out = path.join(ROOT, "reports", "Svodny_otchet.docx");
 Packer.toBuffer(doc).then(buf => { fs.writeFileSync(out, buf); console.log("готово:", out, buf.length, "байт"); });
