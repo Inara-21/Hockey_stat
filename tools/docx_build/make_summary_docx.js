@@ -12,7 +12,7 @@ const FONT = "Calibri", MM = 56.7, CONTENT_W = 15250, sz = pt => pt * 2;
 const INK = "1A1F36", ACCENT = "2B2F77", MUTED = "5A5F7A", LINE = "C7CBDC", HEAD_BG = "EEF0F7",
       ZEBRA = "F7F8FC", GREEN = "2E7D32", MARK_BG = "FFF2A8";
 const t = (text, o = {}) => new TextRun({ text, font: FONT, size: sz(o.pt || 10), bold: !!o.b,
-  italics: !!o.i, color: o.color || INK, break: o.break || undefined });
+  italics: !!o.i, color: o.color || INK, break: o.break || undefined, highlight: o.hl ? "yellow" : undefined });
 const p = (children, o = {}) => new Paragraph({ children: Array.isArray(children) ? children : [children],
   alignment: o.align, spacing: { before: o.before || 0, after: o.after === undefined ? 100 : o.after },
   keepNext: o.keepNext, pageBreakBefore: o.pageBreak });
@@ -70,14 +70,30 @@ children.push(H1("Примечания"));
   const parts = [];
   if (done.length) parts.push(`Ответы проверяющих внесены${data.corrections_date ? " " + data.corrections_date : ""} по: ${done.join(", ")}. `
     + "По ним в отчёте только то, что осталось.");
-  if (wait.length) parts.push(`Ответов пока нет по: ${wait.join(", ")} — указаны все найденные ошибки.`);
-  children.push(p([t("1. ", { b: true }), t(parts.join(" "))], { after: 120 }));
+  const runs = [t("1. ", { b: true }), t(parts.join(" ") + (wait.length ? " " : ""))];
+  if (wait.length) runs.push(t(`Ответов пока нет по: ${wait.join(", ")}`, { hl: true }), t(" — указаны все найденные ошибки."));
+  children.push(p(runs, { after: 120 }));
 }
-children.push(p([t("2. Ошибки в составах систематические. ", { b: true }),
+children.push(p([t("2. Ошибки в составах систематические. ", { b: true, hl: true }),
   t("Похоже, составы команд копировались из матча в матч, поэтому одна и та же ошибка повторяется во "
     + "всех матчах команды. Исправлять каждый матч не нужно — достаточно прислать верные составы команд "
     + "с игровыми номерами: они приведены в разделах дивизионов в таблицах Составы команд, ошибочные "
-    + "строки выделены. Исправления во все матчи мы внесём сами.")], { after: 120 }));
+    + "строки выделены. Исправления во все матчи мы внесём сами.", { hl: true })], { after: 120 }));
+
+// ------------------------------------------------------------ общие вопросы
+if (data.general_questions && data.general_questions.length) {
+  children.push(H1("Вопрос ко всем дивизионам"));
+  const QW = [CONTENT_W - 5200, 5200];
+  data.general_questions.forEach(q => {
+    const rows = [headRow(QW, [q.title, "Ответ организатора"])];
+    rows.push(new TableRow({ children: [
+      cell([p(t(q.text, { pt: 10 }), { after: 80 }), p(t(q.cases, { pt: 9, color: MUTED }), { after: 80 }),
+            p(t(q.ask, { pt: 10, b: true, hl: true }), { after: 0 })], { w: QW[0] }),
+      cell(p(t("", { pt: 10 }), { after: 0 }), { w: QW[1] }),
+    ]}));
+    children.push(table(QW, rows));
+  });
+}
 
 // ------------------------------------------------------------ дивизионы
 const RW = [2600, 7200, CONTENT_W - 9800];
@@ -139,6 +155,9 @@ const mid = Math.floor((CONTENT_W - first - last) / (data.months.length + 1));
 const GW = [first, ...data.months.map(() => mid), CONTENT_W - first - last - mid * data.months.length, last];
 const num = (v, o = {}) => p(t(String(v), { pt: 10, ...o }), { align: AlignmentType.RIGHT, after: 0 });
 const grows = [headRow(GW, ["Соревнование", ...data.months.map(cap), "Всего", "Сходится?"])];
+// «Сходится?» — выделяем, как в присланном отчёте
+grows[0] = new TableRow({ tableHeader: true, children: ["Соревнование", ...data.months.map(cap), "Всего", "Сходится?"].map((x, i) =>
+  cell(p(t(x, { b: true, pt: 9, hl: x === "Сходится?" }), { after: 0 }), { w: GW[i], bg: HEAD_BG })) });
 data.games_table.forEach((r, i) => {
   const bg = i % 2 ? ZEBRA : undefined;
   grows.push(new TableRow({ children: [
@@ -160,7 +179,9 @@ if (data.misplaced_total)
     { pt: 9, color: MUTED }), { before: 80 }));
 
 // ------------------------------------------------------------ сентябрь
-children.push(H1("Ждём данные за сентябрь"));
+children.push(new Paragraph({ children: [t("Ждём данные за сентябрь", { pt: 15, b: true, color: ACCENT, hl: true })],
+  spacing: { before: 320, after: 140 }, keepNext: true,
+  border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: ACCENT, space: 6 } } }));
 children.push(p(t("Не хватает матчей за сентябрь 2026 по всем дивизионам. Ждём файлы — после получения "
   + "проверим их так же.", { pt: 11, b: true }), { after: 80 }));
 data.comps.forEach(c => children.push(p(t(`${c} — сентябрь 2026: нет данных`, { pt: 10 }), { after: 30 })));

@@ -741,6 +741,8 @@ def collect(path):
     summary["applied"] = applied
     summary["conflicts"] = corr_conflicts
     summary["already"] = corr["already"]
+    summary["moved_out"] = corr["moved_out"]
+    summary["moved_in"] = corr["moved_in"]
     summary["misplaced"] = corr["misplaced"]
     summary["all_games"] = all_games
     covered = {r for x in problems

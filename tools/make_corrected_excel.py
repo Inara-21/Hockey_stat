@@ -58,8 +58,8 @@ def write_fixes(wb, applied):
     for a in applied:
         g, fx = a["game"], a["fix"]
         ws = wb[g["sheet"]]
-        fr = g["labels_seen"]["final"]
-        pr = g["labels_seen"]["periods"]
+        fr = g["labels_seen"].get("final")
+        pr = g["labels_seen"].get("periods")
         why = f"Исправлено по ответу проверяющего ({fx.get('note', '')})."
         if "final" in fx:
             c = ws.cell(fr, FIRST_COL)
@@ -75,6 +75,11 @@ def write_fixes(wb, applied):
                     was = c.value
                     c.value = new
                     note(c, f"{why}\nБыло: {was if was not in (None, '') else 'пусто'}", FIXED)
+        if "judge" in fx:
+            c = ws.cell(g["labels_seen"]["judge"] + 1, FIRST_COL)
+            was = c.value
+            c.value = fx["judge"]
+            note(c, f"{why}\nБыло: {was if was not in (None, '') else 'не указан'}", FIXED)
         if fx.get("shootout"):
             # пометку ставим так же, как в остальных матчах файла: справа от итога
             c = ws.cell(fr, FIRST_COL + 1)

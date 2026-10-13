@@ -62,12 +62,13 @@ def mark_reviewer_file(ws, fname):
     return n, os.path.basename(os.path.dirname(old_paths[0]))
 
 
-def copy_sheet(src, dst):
-    for row in src.iter_rows():
+def copy_sheet(src, dst, row_map=lambda r: r, rows=None):
+    """Копия листа; row_map — куда ставить строку исходника; rows — только эти строки."""
+    for row in src.iter_rows(min_row=rows[0] if rows else 1, max_row=rows[-1] if rows else src.max_row):
         for c in row:
             if isinstance(c, MergedCell):
                 continue
-            n = dst.cell(row=c.row, column=c.column, value=c.value)
+            n = dst.cell(row=row_map(c.row), column=c.column, value=c.value)
             if c.has_style:
                 n.font = copy.copy(c.font)
                 n.fill = copy.copy(c.fill)
@@ -84,10 +85,13 @@ def copy_sheet(src, dst):
             dst.column_dimensions[k].width = d.width
         dst.column_dimensions[k].hidden = d.hidden
     for k, d in src.row_dimensions.items():
-        if d.height:
-            dst.row_dimensions[k].height = d.height
+        if d.height and (not rows or rows[0] <= k <= rows[-1]):
+            dst.row_dimensions[row_map(k)].height = d.height
+    if rows:
+        return
     for rng in src.merged_cells.ranges:
-        dst.merge_cells(str(rng))
+        dst.merge_cells(start_row=row_map(rng.min_row), start_column=rng.min_col,
+                        end_row=row_map(rng.max_row), end_column=rng.max_col)
     dst.sheet_format = copy.copy(src.sheet_format)
     dst.freeze_panes = src.freeze_panes
 
@@ -107,7 +111,7 @@ def main():
             raise RuntimeError(f"{fname}: правки не сходятся с файлом: {corr['conflicts']}")
         for a in corr["applied"]:
             extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_final",
-                                     "was_periods", "note", "source"}
+                                     "was_periods", "judge", "was_judge", "note", "source"}
             if extra:
                 raise RuntimeError(f"{fname} стр. {a['fix']['row']}: правку вида {extra} записывать в ячейки пока не умею")
         wb = openpyxl.load_workbook(src_path)
@@ -119,13 +123,45 @@ def main():
             note(ws.cell(g["labels_seen"]["comp"], 2),
                  "МАТЧ ПОД ВОПРОСОМ: " + m["fix"].get("note", "") +
                  ". Удаляем из этого дивизиона и переносим в другой — ждём ответ.", QUESTION)
+        # перенесённые отсюда матчи: строки очищаются, номера строк не меняются
+        for m in corr["moved_out"]:
+            fx, g = m["fix"], m["game"]
+            for r in range(g["row"], g["row"] + 15):
+                for c in ws[r]:
+                    if not isinstance(c, MergedCell):
+                        c.value = None
+                        c.comment = None
+            to_name, _ = sheet_name(fx["move_to"])
+            a = ws.cell(g["row"], 1)
+            a.value = f"Матч перенесён на лист {to_name}, стр. {fx['target_row']}"
+            note(a, f"Исправлено по ответу проверяющего ({fx.get('note', '')}).\n"
+                    f"Было: {g['date'].strftime('%d.%m.%Y')} {g['time']} {g['team1']} — {g['team2']}, "
+                    f"итог {g['final_raw']}", FIXED)
         dst = out.create_sheet(name)
-        copy_sheet(ws, dst)
+        if corr["moved_in"]:
+            # перенесённые сюда матчи — сразу после последнего матча; ниже строки сдвигаются
+            last_end = max(g["row"] for g in games) + 14
+            shift = 15 * len(corr["moved_in"])
+            copy_sheet(ws, dst, row_map=lambda r: r if r <= last_end else r + shift)
+            for m in corr["moved_in"]:
+                fx = m["fix"]
+                src_ws = openpyxl.load_workbook(os.path.join(SRC_DIR, fx["file"])).worksheets[0]
+                rows_ = list(range(fx["row"], fx["row"] + 15))
+                copy_sheet(src_ws, dst, row_map=lambda r, d=fx["target_row"] - fx["row"]: r + d, rows=rows_)
+                comp = dst.cell(m["game"]["labels_seen"]["comp"], 2)
+                was = comp.value
+                comp.value = fx["comp"]
+                from_name, _ = sheet_name(fx["file"])
+                note(comp, f"Матч перенесён с листа {from_name}, стр. {fx['row']}, по ответу проверяющего "
+                           f"({fx.get('note', '')}).\nБыло: {was}", FIXED)
+        else:
+            copy_sheet(ws, dst)
         n_games = len(read_sheet(dst))
         n_fixed = sum(1 for row in dst.iter_rows() for c in row
                       if c.comment and c.fill.fgColor.rgb == FIXED.fgColor.rgb)
         rows.append(dict(name=name, file=fname, comp=games[0]["comp"], month=ws.title, games=n_games,
-                         fixes=n_fixed, misplaced=len(corr["misplaced"]), reviewer_file=bool(archived)))
+                         fixes=n_fixed, misplaced=len(corr["misplaced"]), reviewer_file=bool(archived),
+                         moved_in=len(corr["moved_in"]), moved_out=len(corr["moved_out"])))
 
     # --- сводка
     font = "Arial"
@@ -151,6 +187,10 @@ def main():
             notes.append("исправленный файл проверяющего от 13.10.2026")
         if r["misplaced"]:
             notes.append(f"в том числе {r['misplaced']} матча под вопросом (не из этого дивизиона)")
+        if r["moved_in"]:
+            notes.append(f"добавлены матчи, перенесённые с другого листа: {r['moved_in']}")
+        if r["moved_out"]:
+            notes.append(f"перенесено на другой лист матчей: {r['moved_out']} (строки очищены)")
         vals = [r["name"], r["comp"], r["month"], r["games"], r["fixes"], "; ".join(notes)]
         for j, v in enumerate(vals, 1):
             c = summary.cell(i, j, v)

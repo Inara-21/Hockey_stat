@@ -118,6 +118,7 @@ def main():
         date=datetime.date.today().strftime("%d.%m.%Y"),
         corrections_source=corrections.SOURCES,
         corrections_date=corrections.LAST_DATE,
+        general_questions=corrections.GENERAL_QUESTIONS,
         files=[dict(file=x["file"], comp=x["comp"], month=x["month"], clean=not x["errors"],
                     answered=x["answered"]) for x in sorted(files, key=lambda x: (x["comp"], x["ym"]))],
         divisions=divisions,

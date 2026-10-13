@@ -6,12 +6,13 @@
 записано прежнее значение: если исходный файл с тех пор изменился и значение
 не совпадает, правка не применяется, а расхождение попадает в отчёт.
 """
+import copy
 import fnmatch
 import glob
 import json
 import os
 
-from hockey_data import parse_score
+from hockey_data import parse_score, read_workbook
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CORR_DIR = os.path.join(ROOT, "data", "corrections")
@@ -20,6 +21,8 @@ SHOOTOUT_NOTE = "Б Буллиты"
 
 def _load():
     fixes, rules, sources, dates, scoped = [], {}, [], [], []
+    global GENERAL_QUESTIONS
+    GENERAL_QUESTIONS = []
     for path in sorted(glob.glob(os.path.join(CORR_DIR, "*.json"))):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -29,12 +32,24 @@ def _load():
         rules.update(data.get("rules", {}))
         # правила действуют на файлы из scope (по умолчанию — на все)
         scoped.append((data.get("scope", ["*"]), data.get("rules", {})))
+        GENERAL_QUESTIONS += [q for q in data.get("general_questions", []) if not q.get("answered")]
         for fx in data.get("fixes", []):
             fixes.append(dict(fx, source=data.get("source", "")))
     return fixes, rules, sources, dates, scoped
 
 
+GENERAL_QUESTIONS = []
 FIXES, RULES, SOURCES, DATES, SCOPED_RULES = _load()
+
+
+_SOURCE_CACHE = {}
+
+
+def _source_games(fname):
+    """Матчи исходного файла (для переноса матча из одного файла в другой)."""
+    if fname not in _SOURCE_CACHE:
+        _SOURCE_CACHE[fname] = read_workbook(os.path.join(ROOT, "data", "source", fname))[0]
+    return _SOURCE_CACHE[fname]
 
 
 def rules_for(fname):
@@ -69,11 +84,13 @@ def apply(fname, games):
     правка), misplaced (матчи не из этого дивизиона — открытый вопрос).
     """
     mine = [fx for fx in FIXES if fx["file"] == fname]
-    if not mine:
+    incoming = [fx for fx in FIXES if fx.get("move_to") == fname and not fx.get("superseded")]
+    if not mine and not incoming:
         return games, dict(applied=[], conflicts=[], misplaced=[], already=[], questions={}, answers=[],
-                           open_questions=[])
+                           open_questions=[], moved_out=[], moved_in=[])
     by_row = {g["row"]: g for g in games}
     applied, conflicts, drop, misplaced, already, questions, answers, open_q = [], [], set(), [], [], {}, [], []
+    moved_out, moved_in = [], []
     for fx in mine:
         if fx.get("superseded"):
             # правка закрыта: например, проверяющий прислал исправленный файл
@@ -86,8 +103,27 @@ def apply(fname, games):
             open_q.append(fx)
             continue
         g = by_row.get(fx["row"])
+        if fx.get("move_to"):
+            # Матч переносится в другой файл: здесь его больше нет.
+            if g is None:
+                already.append(dict(fix=fx, game=None))          # уже убран из файла
+            elif [g["team1"], g["team2"]] != fx["teams"]:
+                conflicts.append(dict(fix=fx, game=g, why="в этой строке другой матч"))
+            else:
+                drop.add(fx["row"])
+                moved_out.append(dict(fix=fx, game=g))
+            continue
         if g is None:
             conflicts.append(dict(fix=fx, game=None, why="в файле нет матча с такой строкой"))
+            continue
+        if "judge" in fx:
+            if g["judge"] == fx["judge"]:
+                already.append(dict(fix=fx, game=g))
+            elif g["judge"] != fx.get("was_judge", ""):
+                conflicts.append(dict(fix=fx, game=g, why=f"судья в файле: {g['judge'] or 'не указан'}"))
+            else:
+                g["judge"] = fx["judge"]
+                applied.append(dict(fix=fx, game=g, before="судья не указан", after=f"судья {fx['judge']}"))
             continue
         if fx.get("answer"):
             # Ответ без конкретной правки (например, «исправил у себя») — к ошибке.
@@ -165,6 +201,28 @@ def apply(fname, games):
             g["final_notes"] = list(g["final_notes"]) + [SHOOTOUT_NOTE]
             g["shootout"] = True
         applied.append(dict(fix=fx, game=g, before=before, after=describe(g)))
+    # Матчи, перенесённые сюда из другого файла, — в конец, в заранее назначенные строки.
+    for fx in incoming:
+        here = next((g for g in games if g["row"] == fx["target_row"]), None)
+        if here is not None:
+            if [here["team1"], here["team2"]] == fx["teams"]:
+                already.append(dict(fix=fx, game=here))
+            else:
+                conflicts.append(dict(fix=fx, game=here, why=f"строка {fx['target_row']} уже занята другим матчем"))
+            continue
+        origin = next((g for g in _source_games(fx["file"]) if g["row"] == fx["row"]), None)
+        if origin is None or [origin["team1"], origin["team2"]] != fx["teams"]:
+            conflicts.append(dict(fix=fx, game=None, why=f"в файле {fx['file']} нет переносимого матча"))
+            continue
+        g = copy.deepcopy(origin)
+        shift = fx["target_row"] - g["row"]
+        g["labels_seen"] = {k: r + shift for k, r in g["labels_seen"].items()}
+        g["row"], g["comp"] = fx["target_row"], fx["comp"]
+        g["moved_from"] = (fx["file"], fx["row"])
+        games = games + [g]
+        moved_in.append(dict(fix=fx, game=g, origin=origin))
+
     kept = [g for g in games if g["row"] not in drop]
     return kept, dict(applied=applied, conflicts=conflicts, misplaced=misplaced, already=already,
-                      questions=questions, answers=answers, open_questions=open_q)
+                      questions=questions, answers=answers, open_questions=open_q,
+                      moved_out=moved_out, moved_in=moved_in)
