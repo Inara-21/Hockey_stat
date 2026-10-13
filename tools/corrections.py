@@ -74,6 +74,9 @@ def apply(fname, games):
     by_row = {g["row"]: g for g in games}
     applied, conflicts, drop, misplaced, already, questions, answers = [], [], set(), [], [], {}, []
     for fx in mine:
+        if fx.get("superseded"):
+            # правка закрыта: например, проверяющий прислал исправленный файл
+            continue
         if fx.get("answer"):
             answers.append(fx)
             continue
