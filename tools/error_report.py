@@ -251,6 +251,7 @@ def collect(path):
     fname = os.path.basename(path)
     all_games = games
     games, corr = corrections.apply(fname, games)
+    rules = corrections.rules_for(fname)
     applied, corr_conflicts = corr["applied"], corr["conflicts"]
     repaired = repair(games)
     problems = []
@@ -632,7 +633,7 @@ def collect(path):
     # Однотипные находки по игрокам — одним вопросом на всю группу.
     movers = [(nm, teams) for nm, teams in ptm.items()
               if len(teams) > 1 and nm not in swapped_rosters]
-    if movers and corrections.RULES.get("one_team_per_division"):
+    if movers and rules.get("one_team_per_division"):
         # Ответ организатора: игрок выступает только за одну команду дивизиона.
         for nm, teams in sorted(movers):
             parts = []
@@ -648,7 +649,7 @@ def collect(path):
                 rows=sorted(player_rows[nm]),
                 fix="Игрок выступает только за одну команду дивизиона. За какую?", ready=False)
             problems[-1]["players"] = [nm]
-    elif movers:
+    elif movers and not rules.get("players_may_change_teams"):
         lines_m = "; ".join(
             f"{nm}: {', '.join(f'{t} — {c}' for t, c in teams.most_common())}"
             for nm, teams in sorted(movers))
@@ -670,7 +671,7 @@ def collect(path):
                 continue
             odd_num[(team, tuple(sorted(set(rs))))].append(
                 f"{nm} — здесь номер {n}, в остальных матчах за эту команду — {usual}")
-    for (team, rs), who in sorted(odd_num.items()):
+    for (team, rs), who in ([] if rules.get("number_change_allowed") else sorted(odd_num.items())):
         add(ERROR, None, "номер игрока меняется внутри команды",
             f"Номер игрока не совпадает с его номером в других матчах за команду {team}. "
             + "; ".join(who) + ". Какой номер верный?",
@@ -734,11 +735,6 @@ def collect(path):
     )
     summary["repaired"] = repaired
     summary["applied"] = applied
-    # вопросы по непонятным ответам проверяющих — в последний столбец ошибки
-    for p in problems:
-        q = corr["questions"].get(p["game"]["row"]) if p["game"] is not None else None
-        if q and not p.get("fix"):
-            p["fix"] = q
     summary["conflicts"] = corr_conflicts
     summary["already"] = corr["already"]
     summary["misplaced"] = corr["misplaced"]
@@ -752,7 +748,16 @@ def collect(path):
                 f"Составы команд {g['team1']} и {g['team2']} в этом матче почти полностью "
                 f"совпадают. Состав одной из команд скопирован по ошибке. Какой состав верный?")
 
-    if namesakes and not corrections.RULES.get("one_team_per_division"):
+    if namesakes and rules.get("no_player_for_both_teams") and not rules.get("one_team_per_division"):
+        # Ответ организатора: в одном матче за обе команды играть нельзя.
+        for nm, d in sorted(namesakes.items()):
+            sides = "; ".join(f"{t} — №{n}" for (t, n) in sorted(d["sides"]))
+            add(ERROR, None, "игрок за обе команды в одном матче",
+                f"{nm} записан в составы обеих команд одного матча ({sides}; в {n_matches(len(d['rows']))}). "
+                f"По ответу организатора так не допускается.",
+                rows=sorted(d["rows"]), fix="За какую команду он играл в этих матчах?", ready=False)
+            problems[-1]["players"] = [nm]
+    elif namesakes and not rules.get("one_team_per_division"):
         parts = []
         for nm, d in sorted(namesakes.items()):
             sides = "; ".join(f"{t} — №{n}" for (t, n) in sorted(d["sides"]))
@@ -762,6 +767,17 @@ def collect(path):
             "у каждой под своим номером: " + "; ".join(parts) + ".",
             rows=sorted({r for d in namesakes.values() for r in d["rows"]}))
 
+    # ответы проверяющих без конкретной правки («исправил у себя») — в последний столбец
+    for a in corr["answers"]:
+        for p in problems:
+            rows = set(p["rows"]) or ({p["game"]["row"]} if p["game"] is not None else set())
+            if p["what"] == a["kind"] and rows & set(a["rows"]):
+                p["fix"], p["proposed"] = a["answer"], False
+    # вопросы по непонятным ответам проверяющих — в последний столбец ошибки
+    for p in problems:
+        q = corr["questions"].get(p["game"]["row"]) if p["game"] is not None else None
+        if q and not p.get("fix"):
+            p["fix"] = q
     return games, problems, summary
 
 

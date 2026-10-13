@@ -6,6 +6,7 @@
 записано прежнее значение: если исходный файл с тех пор изменился и значение
 не совпадает, правка не применяется, а расхождение попадает в отчёт.
 """
+import fnmatch
 import glob
 import json
 import os
@@ -18,7 +19,7 @@ SHOOTOUT_NOTE = "Б Буллиты"
 
 
 def _load():
-    fixes, rules, sources, dates = [], {}, [], []
+    fixes, rules, sources, dates, scoped = [], {}, [], [], []
     for path in sorted(glob.glob(os.path.join(CORR_DIR, "*.json"))):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -26,12 +27,23 @@ def _load():
         if data.get("applied_on"):
             dates.append(data["applied_on"])
         rules.update(data.get("rules", {}))
+        # правила действуют на файлы из scope (по умолчанию — на все)
+        scoped.append((data.get("scope", ["*"]), data.get("rules", {})))
         for fx in data.get("fixes", []):
             fixes.append(dict(fx, source=data.get("source", "")))
-    return fixes, rules, sources, dates
+    return fixes, rules, sources, dates, scoped
 
 
-FIXES, RULES, SOURCES, DATES = _load()
+FIXES, RULES, SOURCES, DATES, SCOPED_RULES = _load()
+
+
+def rules_for(fname):
+    """Ответы организаторов, относящиеся к этому файлу."""
+    out = {}
+    for patterns, rules in SCOPED_RULES:
+        if any(fnmatch.fnmatch(fname, pt) for pt in patterns):
+            out.update(rules)
+    return out
 # дата последних внесённых правок, ДД.ММ.ГГГГ
 LAST_DATE = max(DATES, key=lambda d: d.split(".")[::-1]) if DATES else None
 
@@ -58,13 +70,55 @@ def apply(fname, games):
     """
     mine = [fx for fx in FIXES if fx["file"] == fname]
     if not mine:
-        return games, dict(applied=[], conflicts=[], misplaced=[], already=[], questions={})
+        return games, dict(applied=[], conflicts=[], misplaced=[], already=[], questions={}, answers=[])
     by_row = {g["row"]: g for g in games}
-    applied, conflicts, drop, misplaced, already, questions = [], [], set(), [], [], {}
+    applied, conflicts, drop, misplaced, already, questions, answers = [], [], set(), [], [], {}, []
     for fx in mine:
+        if fx.get("answer"):
+            answers.append(fx)
+            continue
         g = by_row.get(fx["row"])
         if g is None:
             conflicts.append(dict(fix=fx, game=None, why="в файле нет матча с такой строкой"))
+            continue
+        if fx.get("answer"):
+            # Ответ без конкретной правки (например, «исправил у себя») — к ошибке.
+            answers.append(fx)
+            continue
+        if "player" in fx:
+            # Номер игрока: в составах этого матча у игрока с прежним номером ставим новый.
+            hits = [(k, i) for k in ("roster1", "roster2") for i, (n, nm) in enumerate(g[k]) if nm == fx["player"]]
+            if hits and all(g[k][i][0] == fx["number"] for k, i in hits):
+                already.append(dict(fix=fx, game=g))
+                continue
+            todo = [(k, i) for k, i in hits if g[k][i][0] == fx.get("was_number", "")]
+            if not todo:
+                conflicts.append(dict(fix=fx, game=g, why=f"у игрока {fx['player']} в этом матче нет "
+                                                         f"номера {fx.get('was_number') or '(пусто)'}"))
+                continue
+            for k, i in todo:
+                g[k][i] = (fx["number"], fx["player"])
+            applied.append(dict(fix=fx, game=g,
+                                before=f"{fx['player']} — {('№' + fx['was_number']) if fx.get('was_number') else 'без номера'}",
+                                after=f"{fx['player']} — №{fx['number']}"))
+            continue
+        if "roster" in fx:
+            # Состав команды целиком (скопированный состав другой команды).
+            key = "roster1" if g["team1"] == fx["team"] else "roster2" if g["team2"] == fx["team"] else None
+            new_roster = [tuple(x) for x in fx["roster"]]
+            if key is None:
+                conflicts.append(dict(fix=fx, game=g, why=f"в матче нет команды {fx['team']}"))
+                continue
+            if g[key] == new_roster:
+                already.append(dict(fix=fx, game=g))
+                continue
+            other = g["roster2" if key == "roster1" else "roster1"]
+            if fx.get("was_copy_of_other") and set(g[key]) != set(other):
+                conflicts.append(dict(fix=fx, game=g, why="состав в файле уже не совпадает с составом соперника"))
+                continue
+            g[key] = new_roster
+            applied.append(dict(fix=fx, game=g, before=f"состав команды {fx['team']}: копия состава соперника",
+                                after=f"состав команды {fx['team']}: её постоянный состав ({len(new_roster)} игроков)"))
             continue
         if fx.get("question"):
             # Ответ проверяющего непонятен — правки нет, к ошибке добавляется вопрос.
@@ -105,4 +159,4 @@ def apply(fname, games):
         applied.append(dict(fix=fx, game=g, before=before, after=describe(g)))
     kept = [g for g in games if g["row"] not in drop]
     return kept, dict(applied=applied, conflicts=conflicts, misplaced=misplaced, already=already,
-                      questions=questions)
+                      questions=questions, answers=answers)
