@@ -8,7 +8,10 @@ const { Document, Packer, Paragraph, TextRun, AlignmentType, Table, TableRow,
         VerticalAlign, PageOrientation, PageBreak, VerticalMergeType } = d;
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const data = JSON.parse(fs.readFileSync(path.join(ROOT, "reports", "report_data.json"), "utf8"));
+// node make_docx.js [данные.json] [отчёт.docx]
+const IN = process.argv[2] || path.join(ROOT, "reports", "report_data.json");
+const OUT = process.argv[3] || path.join(ROOT, "reports", "Otchet_o_proverke.docx");
+const data = JSON.parse(fs.readFileSync(IN, "utf8"));
 
 const FONT = "Calibri";
 const MM = 56.7;
@@ -57,10 +60,11 @@ const headRow = (widths, titles) => new TableRow({
 const children = [];
 
 // ---------------------------------------------------------------- титул
-children.push(p(t("ОТЧЁТ О ПРОВЕРКЕ ИСХОДНЫХ ДАННЫХ", { pt: 20, b: true, color: ACCENT }),
+children.push(p(t(data.title || "ОТЧЁТ О ПРОВЕРКЕ ИСХОДНЫХ ДАННЫХ", { pt: 20, b: true, color: ACCENT }),
                 { align: AlignmentType.CENTER, after: 60 }));
 children.push(p(t("Чемпионат Регулярной хоккейной лиги 3х3", { pt: 12, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 40 }));
+if (data.note) children.push(p(t(data.note, { pt: 11, color: MUTED }), { align: AlignmentType.CENTER, after: 40 }));
 children.push(p(t(`Дата проверки: ${data.date}`, { pt: 10, color: MUTED }),
                 { align: AlignmentType.CENTER, after: 80 }));
 children.push(p(t("Где исправление следует из самих данных, оно предложено в последнем столбце "
@@ -92,8 +96,8 @@ if (data.questions.length) {
 
 // ---------------------------------------------------------------- дивизионы
 const FW = [900, 2600, 2400, 4400, CONTENT_W - 10300];
-data.divisions.forEach(div => {
-  children.push(H1(div.comp, { pageBreak: true }));
+data.divisions.forEach((div, di) => {
+  children.push(H1(div.comp, { pageBreak: data.questions.length > 0 || di > 0 }));
   children.push(p(t("В последнем столбце впишите, как исправляем. Если там уже есть вопрос — "
                     + "ответьте на него.", { pt: 9, color: MUTED }), { after: 160 }));
 
@@ -162,7 +166,7 @@ const doc = new Document({
   }],
 });
 
-const out = path.join(ROOT, "reports", "Otchet_o_proverke.docx");
+const out = OUT;
 Packer.toBuffer(doc).then(buf => {
   fs.writeFileSync(out, buf);
   console.log("готово:", out, buf.length, "байт");

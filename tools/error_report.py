@@ -229,7 +229,9 @@ def collect(path):
     """-> (games, problems, summary). problems — список словарей."""
     games, skipped = read_workbook(path)
     fname = os.path.basename(path)
-    games, applied, corr_conflicts = corrections.apply(fname, games)
+    all_games = games
+    games, corr = corrections.apply(fname, games)
+    applied, corr_conflicts = corr["applied"], corr["conflicts"]
     repaired = repair(games)
     problems = []
 
@@ -240,6 +242,18 @@ def collect(path):
         problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text,
                              rows=sorted(rows) if rows else [], fix=fix,
                              proposed=bool(fix) and ready))
+
+    if corr["misplaced"]:
+        mg = [m["game"] for m in corr["misplaced"]]
+        teams = sorted({t for g in mg for t in (g["team1"], g["team2"])})
+        add(ERROR, None, "матчи не из этого дивизиона",
+            f"Матчи команд {', '.join(teams)} — по ответу проверяющих попали в этот файл по "
+            f"ошибке. В файле другого дивизиона этих матчей нет: там в этот день у этих команд "
+            f"другие матчи, с другим временем и счётом.",
+            rows=[g["row"] for g in mg],
+            fix="Перенести эти матчи в файл другого дивизиона или удалить совсем?", ready=False)
+        for m in corr["misplaced"]:
+            problems[-1].setdefault("games", []).append(m["game"])
 
     for c in corr_conflicts:
         add(ERROR, c["game"], "правка из реестра не применена",
@@ -594,6 +608,7 @@ def collect(path):
             add(ERROR, None, "игрок за несколько команд", text,
                 rows=sorted(player_rows[nm]),
                 fix="Игрок выступает только за одну команду дивизиона. За какую?", ready=False)
+            problems[-1]["players"] = [nm]
     elif movers:
         lines_m = "; ".join(
             f"{nm}: {', '.join(f'{t} — {c}' for t, c in teams.most_common())}"
@@ -680,7 +695,15 @@ def collect(path):
     )
     summary["repaired"] = repaired
     summary["applied"] = applied
+    # вопросы по непонятным ответам проверяющих — в последний столбец ошибки
+    for p in problems:
+        q = corr["questions"].get(p["game"]["row"]) if p["game"] is not None else None
+        if q and not p.get("fix"):
+            p["fix"] = q
     summary["conflicts"] = corr_conflicts
+    summary["already"] = corr["already"]
+    summary["misplaced"] = corr["misplaced"]
+    summary["all_games"] = all_games
     covered = {r for x in problems
                if x["what"] in ("составы команд перепутаны местами", "один состав за разные команды")
                for r in (x["rows"] or ([x["game"]["row"]] if x["game"] else []))}

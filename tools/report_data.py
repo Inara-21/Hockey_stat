@@ -57,9 +57,11 @@ def finding(p):
     return item
 
 
-def main():
-    files = [os.path.join(SRC_DIR, f) for f in sorted(os.listdir(SRC_DIR))
-             if f.lower().endswith((".xlsx", ".xlsm", ".xls"))]
+def main(files=None, out=OUT, title=None, note=None):
+    """files — пути к Excel (по умолчанию все из data/source); out — куда писать JSON."""
+    if not files:
+        files = [os.path.join(SRC_DIR, f) for f in sorted(os.listdir(SRC_DIR))
+                 if f.lower().endswith((".xlsx", ".xlsm", ".xls"))]
 
     divisions = defaultdict(lambda: defaultdict(lambda: {"games": 0, "errors": []}))
     questions = defaultdict(list)
@@ -133,7 +135,11 @@ def main():
                           total=sum(b["games"] for b in divisions[c].values()))
                      for c in sorted(divisions)],
     )
-    with open(OUT, "w", encoding="utf-8") as f:
+    if title:
+        data["title"] = title
+    if note:
+        data["note"] = note
+    with open(out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     print(f"данные: файлов {data['files']}, дивизионов {len(div_blocks)}, "
           f"матчей {data['games']}, ошибок {data['errors']}, "
@@ -141,4 +147,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:] or None)
