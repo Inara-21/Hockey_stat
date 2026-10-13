@@ -22,6 +22,7 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.hyperlink import Hyperlink
 
 import corrections
 from error_report import MONTHS, SRC_DIR
@@ -157,7 +158,7 @@ def main():
             c.border = box
             c.alignment = Alignment(vertical="top", wrap_text=(j == 6))
         link = summary.cell(i, 1)
-        link.hyperlink = f"#'{r['name']}'!A1"
+        link.hyperlink = Hyperlink(ref=link.coordinate, location=f"'{r['name']}'!A1")
         link.font = Font(name=font, size=10, color="FF2B2F77", underline="single")
     last = 6 + len(rows)
     summary.cell(last, 1, "Итого").font = Font(name=font, size=10, bold=True)
