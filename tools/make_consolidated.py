@@ -1,0 +1,178 @@
+# -*- coding: utf-8 -*-
+"""Сводная книга Excel: все матчи со всеми внесёнными правками.
+
+Каждый дивизион каждой конференции за каждый месяц — на своём листе. Лист —
+копия исходного листа ячейка в ячейку: номера строк и столбцов совпадают с
+исходным файлом. Внесены правки проверяющих (реестр data/corrections) и
+исправленные файлы проверяющих (data/source; прежние версии — в архиве).
+Исправленные ячейки выделены зелёным, в примечании — что было.
+Первый лист — сводка со ссылками на листы.
+
+Запуск:  python3 tools/make_consolidated.py
+"""
+import copy
+import glob
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import openpyxl
+from openpyxl.cell.cell import MergedCell
+from openpyxl.comments import Comment
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+
+import corrections
+from error_report import MONTHS, SRC_DIR
+from hockey_data import read_workbook, read_sheet, norm
+from make_corrected_excel import write_fixes, note, FIXED
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ARCHIVE = os.path.join(ROOT, "data", "source_archive")
+OUT = os.path.join(ROOT, "reports", "Vse_matchi_s_pravkami.xlsx")
+QUESTION = PatternFill("solid", fgColor="FFFFFF00")
+CONF_ORDER = {"vostok": "ВОСТОК", "zapad": "ЗАПАД", "centr": "ЦЕНТР"}
+
+
+def sheet_name(fname):
+    m = re.match(r"(\d{4})-(\d{2})_([a-z]+)_div(\d+)", fname)
+    y, mo, conf, div = int(m.group(1)), int(m.group(2)), m.group(3), m.group(4)
+    return f"{CONF_ORDER[conf]} {div} дивизион {MONTHS[mo]} {y}", (list(CONF_ORDER).index(conf), int(div), y, mo)
+
+
+def mark_reviewer_file(ws, fname):
+    """Правки, пришедшие исправленным файлом проверяющего: сравнение с первой версией."""
+    old_paths = sorted(glob.glob(os.path.join(ARCHIVE, "*", fname)))
+    if not old_paths:
+        return 0, None
+    old = openpyxl.load_workbook(old_paths[0]).worksheets[0]
+    n = 0
+    for row in ws.iter_rows(min_row=1, max_row=max(ws.max_row, old.max_row),
+                            max_col=max(ws.max_column, old.max_column)):
+        for c in row:
+            if isinstance(c, MergedCell):
+                continue
+            was = old.cell(c.row, c.column).value
+            if was != c.value:
+                note(c, "Исправлено проверяющим (исправленный файл от 13.10.2026).\n"
+                        f"Было: {was if was not in (None, '') else 'пусто'}", FIXED)
+                n += 1
+    return n, os.path.basename(os.path.dirname(old_paths[0]))
+
+
+def copy_sheet(src, dst):
+    for row in src.iter_rows():
+        for c in row:
+            if isinstance(c, MergedCell):
+                continue
+            n = dst.cell(row=c.row, column=c.column, value=c.value)
+            if c.has_style:
+                n.font = copy.copy(c.font)
+                n.fill = copy.copy(c.fill)
+                n.border = copy.copy(c.border)
+                n.alignment = copy.copy(c.alignment)
+                n.number_format = c.number_format
+                n.protection = copy.copy(c.protection)
+            if c.comment:
+                cm = Comment(c.comment.text, c.comment.author)
+                cm.width, cm.height = c.comment.width, c.comment.height
+                n.comment = cm
+    for k, d in src.column_dimensions.items():
+        if d.width:
+            dst.column_dimensions[k].width = d.width
+        dst.column_dimensions[k].hidden = d.hidden
+    for k, d in src.row_dimensions.items():
+        if d.height:
+            dst.row_dimensions[k].height = d.height
+    for rng in src.merged_cells.ranges:
+        dst.merge_cells(str(rng))
+    dst.sheet_format = copy.copy(src.sheet_format)
+    dst.freeze_panes = src.freeze_panes
+
+
+def main():
+    out = openpyxl.Workbook()
+    summary = out.active
+    summary.title = "Сводка"
+    files = sorted((f for f in os.listdir(SRC_DIR) if f.endswith(".xlsx")), key=lambda f: sheet_name(f)[1])
+    rows = []
+    for fname in files:
+        name, _ = sheet_name(fname)
+        src_path = os.path.join(SRC_DIR, fname)
+        games, _ = read_workbook(src_path)
+        _, corr = corrections.apply(fname, copy.deepcopy(games))
+        if corr["conflicts"]:
+            raise RuntimeError(f"{fname}: правки не сходятся с файлом: {corr['conflicts']}")
+        for a in corr["applied"]:
+            extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_final",
+                                     "was_periods", "note", "source"}
+            if extra:
+                raise RuntimeError(f"{fname} стр. {a['fix']['row']}: правку вида {extra} записывать в ячейки пока не умею")
+        wb = openpyxl.load_workbook(src_path)
+        ws = wb.worksheets[0]
+        n_file, archived = mark_reviewer_file(ws, fname)
+        write_fixes(wb, corr["applied"])
+        for m in corr["misplaced"]:
+            g = m["game"]
+            note(ws.cell(g["labels_seen"]["comp"], 2),
+                 "МАТЧ ПОД ВОПРОСОМ: " + m["fix"].get("note", "") +
+                 ". Удаляем из этого дивизиона и переносим в другой — ждём ответ.", QUESTION)
+        dst = out.create_sheet(name)
+        copy_sheet(ws, dst)
+        n_games = len(read_sheet(dst))
+        rows.append(dict(name=name, file=fname, comp=games[0]["comp"], month=ws.title, games=n_games,
+                         fixes=len(corr["applied"]) + n_file, misplaced=len(corr["misplaced"]),
+                         reviewer_file=bool(archived)))
+
+    # --- сводка
+    font = "Arial"
+    thin = Side(style="thin", color="FFC7CBDC")
+    box = Border(top=thin, bottom=thin, left=thin, right=thin)
+    summary["A1"] = "ВСЕ МАТЧИ С ВНЕСЁННЫМИ ПРАВКАМИ"
+    summary["A1"].font = Font(name=font, size=14, bold=True)
+    summary["A2"] = (f"С последними правками от {corrections.LAST_DATE}. На каждом листе — копия исходного файла: "
+                     "номера строк и столбцов совпадают с исходником.")
+    summary["A3"] = "Зелёная ячейка — исправлена, в примечании к ней указано, что было. Жёлтая — матч под вопросом."
+    for r in (2, 3):
+        summary.cell(r, 1).font = Font(name=font, size=10, color="FF5A5F7A")
+    head = ["Лист", "Соревнование", "Месяц", "Матчей на листе", "Исправлено ячеек", "Примечание"]
+    for j, h in enumerate(head, 1):
+        c = summary.cell(5, j, h)
+        c.font = Font(name=font, size=10, bold=True)
+        c.fill = PatternFill("solid", fgColor="FFEEF0F7")
+        c.border = box
+        c.alignment = Alignment(vertical="top", wrap_text=True)
+    for i, r in enumerate(rows, 6):
+        notes = []
+        if r["reviewer_file"]:
+            notes.append("исправленный файл проверяющего от 13.10.2026")
+        if r["misplaced"]:
+            notes.append(f"в том числе {r['misplaced']} матча под вопросом (не из этого дивизиона)")
+        vals = [r["name"], r["comp"], r["month"], r["games"], r["fixes"], "; ".join(notes)]
+        for j, v in enumerate(vals, 1):
+            c = summary.cell(i, j, v)
+            c.font = Font(name=font, size=10)
+            c.border = box
+            c.alignment = Alignment(vertical="top", wrap_text=(j == 6))
+        link = summary.cell(i, 1)
+        link.hyperlink = f"#'{r['name']}'!A1"
+        link.font = Font(name=font, size=10, color="FF2B2F77", underline="single")
+    last = 6 + len(rows)
+    summary.cell(last, 1, "Итого").font = Font(name=font, size=10, bold=True)
+    summary.cell(last, 4, f"=SUM(D6:D{last - 1})").font = Font(name=font, size=10, bold=True)
+    summary.cell(last, 5, f"=SUM(E6:E{last - 1})").font = Font(name=font, size=10, bold=True)
+    summary.cell(last + 2, 1, "Число матчей подсчитано программой проверки по блокам матчей на каждом листе.").font = \
+        Font(name=font, size=9, color="FF5A5F7A")
+    for col, w in zip("ABCDEF", (32, 34, 14, 16, 17, 60)):
+        summary.column_dimensions[col].width = w
+    out.calculation.fullCalcOnLoad = True
+    out.save(OUT)
+    print(f"готово: {OUT}")
+    for r in rows:
+        print(f"   {r['name']:32} матчей {r['games']:>4}  исправлено ячеек {r['fixes']:>3}  {r['file']}")
+    return rows
+
+
+if __name__ == "__main__":
+    main()
