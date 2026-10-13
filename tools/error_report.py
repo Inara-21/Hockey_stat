@@ -295,6 +295,10 @@ def collect(path):
         for m in corr["misplaced"]:
             problems[-1].setdefault("games", []).append(m["game"])
 
+    for q in corr["open_questions"]:
+        add(ERROR, None, "нужно подтвердить ответ", q["open_question"], rows=q["rows"],
+            fix=q.get("fix", ""), ready=False)
+
     for c in corr_conflicts:
         add(ERROR, c["game"], "правка из реестра не применена",
             f"Правка проверяющего для строки {c['fix']['row']} не применена: {c['why']}.",

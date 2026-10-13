@@ -70,15 +70,20 @@ def apply(fname, games):
     """
     mine = [fx for fx in FIXES if fx["file"] == fname]
     if not mine:
-        return games, dict(applied=[], conflicts=[], misplaced=[], already=[], questions={}, answers=[])
+        return games, dict(applied=[], conflicts=[], misplaced=[], already=[], questions={}, answers=[],
+                           open_questions=[])
     by_row = {g["row"]: g for g in games}
-    applied, conflicts, drop, misplaced, already, questions, answers = [], [], set(), [], [], {}, []
+    applied, conflicts, drop, misplaced, already, questions, answers, open_q = [], [], set(), [], [], {}, [], []
     for fx in mine:
         if fx.get("superseded"):
             # правка закрыта: например, проверяющий прислал исправленный файл
             continue
         if fx.get("answer"):
             answers.append(fx)
+            continue
+        if fx.get("open_question"):
+            # вопрос к проверяющему по его ответу — выводится в отчёте отдельной строкой
+            open_q.append(fx)
             continue
         g = by_row.get(fx["row"])
         if g is None:
@@ -162,4 +167,4 @@ def apply(fname, games):
         applied.append(dict(fix=fx, game=g, before=before, after=describe(g)))
     kept = [g for g in games if g["row"] not in drop]
     return kept, dict(applied=applied, conflicts=conflicts, misplaced=misplaced, already=already,
-                      questions=questions, answers=answers)
+                      questions=questions, answers=answers, open_questions=open_q)

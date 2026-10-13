@@ -64,9 +64,15 @@ children.push(table(FW0, frows));
 
 // ------------------------------------------------------------ примечания
 children.push(H1("Примечания"));
-children.push(p([t("1. ", { b: true }),
-  t(`По ЗАПАДУ и ВОСТОКУ ответы проверяющих на отчёт от 01.10.2026 внесены${data.corrections_date ? " " + data.corrections_date : ""} — `
-    + "в отчёте только то, что осталось. По ЦЕНТРУ ответов пока нет — указаны все найденные ошибки.")], { after: 120 }));
+{
+  const done = data.divisions_all.filter(x => x.answered).map(x => x.comp);
+  const wait = data.divisions_all.filter(x => !x.answered).map(x => x.comp);
+  const parts = [];
+  if (done.length) parts.push(`Ответы проверяющих внесены${data.corrections_date ? " " + data.corrections_date : ""} по: ${done.join(", ")}. `
+    + "По ним в отчёте только то, что осталось.");
+  if (wait.length) parts.push(`Ответов пока нет по: ${wait.join(", ")} — указаны все найденные ошибки.`);
+  children.push(p([t("1. ", { b: true }), t(parts.join(" "))], { after: 120 }));
+}
 children.push(p([t("2. Ошибки в составах систематические. ", { b: true }),
   t("Похоже, составы команд копировались из матча в матч, поэтому одна и та же ошибка повторяется во "
     + "всех матчах команды. Исправлять каждый матч не нужно — достаточно прислать верные составы команд "

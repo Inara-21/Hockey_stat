@@ -127,6 +127,7 @@ def main():
         games_grand=sum(len(x["games"]) for x in files),
         misplaced_total=sum(x["misplaced"] for x in files),
         comps=sorted(by_comp),
+        divisions_all=[dict(comp=c, answered=any(x["answered"] for x in by_comp[c])) for c in sorted(by_comp)],
     )
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
