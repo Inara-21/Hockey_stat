@@ -8,6 +8,7 @@ import datetime, json, os, re, sys
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from corrections import SOURCES as corr_sources
 from error_report import (collect, period_sums, plural, SRC_DIR, MONTHS, ERROR,
                           QUESTION, ASK, DEFAULT_ASK)
 
@@ -64,8 +65,16 @@ def main():
     questions = defaultdict(list)
     n_files = 0
 
+    applied = defaultdict(lambda: defaultdict(list))
     for path in files:
         games, problems, s = collect(path)
+        for a in s.get("applied", []):
+            g = a["game"]
+            d = g["date"].strftime("%d.%m.%Y") if g["date"] else "—"
+            applied[g["comp"]][(g["date"].year, g["date"].month)].append(dict(
+                row=str(g["row"]),
+                match=f"{d}  {g['time'] or '—'}\n{g['team1'] or '—'} — {g['team2'] or '—'}",
+                before=a["before"], after=a["after"], note=a["fix"].get("note", "")))
         n_files += 1
         months = sorted(s["breakdown"], key=lambda k: (k[1], k[2]))
         for (comp, y, m), n in s["breakdown"].items():
@@ -114,6 +123,10 @@ def main():
         files=n_files, games=total_games, errors=total_errors, proposed=total_proposed,
         questions_total=sum(len(q["items"]) for q in q_blocks),
         questions=q_blocks, summary=summary, divisions=div_blocks,
+        corrections_source=corr_sources,
+        applied=[dict(comp=c, months=[dict(label=f"{MONTHS[m]} {y}", items=applied[c][(y, m)])
+                                      for (y, m) in sorted(applied[c])])
+                 for c in sorted(applied)],
         months=[f"{MONTHS[m]} {y}" for (y, m) in sorted({k for c in divisions for k in divisions[c]})],
         games_table=[dict(comp=c, by_month={f"{MONTHS[m]} {y}": divisions[c][(y, m)]["games"]
                                             for (y, m) in divisions[c]},

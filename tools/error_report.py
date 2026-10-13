@@ -19,6 +19,7 @@ from collections import Counter, defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import openpyxl
 from hockey_data import read_workbook, parse_score
+import corrections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(ROOT, "data", "source")
@@ -228,6 +229,7 @@ def collect(path):
     """-> (games, problems, summary). problems — список словарей."""
     games, skipped = read_workbook(path)
     fname = os.path.basename(path)
+    games, applied, corr_conflicts = corrections.apply(fname, games)
     repaired = repair(games)
     problems = []
 
@@ -238,6 +240,11 @@ def collect(path):
         problems.append(dict(kind=kind, file=fname, game=game, what=what, text=text,
                              rows=sorted(rows) if rows else [], fix=fix,
                              proposed=bool(fix) and ready))
+
+    for c in corr_conflicts:
+        add(ERROR, c["game"], "правка из реестра не применена",
+            f"Правка проверяющего для строки {c['fix']['row']} не применена: {c['why']}.",
+            fix="Проверьте строку в исходном файле.", ready=False)
 
     for r in repaired:
         add(ERROR, r["game"], r["kind"], r["text"], fix=r["fix"])
@@ -572,7 +579,22 @@ def collect(path):
     # Однотипные находки по игрокам — одним вопросом на всю группу.
     movers = [(nm, teams) for nm, teams in ptm.items()
               if len(teams) > 1 and nm not in swapped_rosters]
-    if movers:
+    if movers and corrections.RULES.get("one_team_per_division"):
+        # Ответ организатора: игрок выступает только за одну команду дивизиона.
+        for nm, teams in sorted(movers):
+            parts = []
+            for t, c in teams.most_common():
+                nums = sorted(team_num_rows.get((nm, t), {}), key=lambda n: -len(team_num_rows[(nm, t)][n]))
+                parts.append(f"{t}" + (f" (№{', №'.join(nums)})" if nums else "")
+                             + f" — {c} {plural(c, 'матч', 'матча', 'матчей')}")
+            text = f"{nm} записан за несколько команд: " + "; ".join(parts) + "."
+            both = namesakes.get(nm, {}).get("rows", set())
+            if both:
+                text += f" В {n_matches(len(both))} — сразу за обе команды."
+            add(ERROR, None, "игрок за несколько команд", text,
+                rows=sorted(player_rows[nm]),
+                fix="Игрок выступает только за одну команду дивизиона. За какую?", ready=False)
+    elif movers:
         lines_m = "; ".join(
             f"{nm}: {', '.join(f'{t} — {c}' for t, c in teams.most_common())}"
             for nm, teams in sorted(movers))
@@ -657,6 +679,8 @@ def collect(path):
                      for c in row if isinstance(c.value, str) and c.value.startswith("=")),
     )
     summary["repaired"] = repaired
+    summary["applied"] = applied
+    summary["conflicts"] = corr_conflicts
     covered = {r for x in problems
                if x["what"] in ("составы команд перепутаны местами", "один состав за разные команды")
                for r in (x["rows"] or ([x["game"]["row"]] if x["game"] else []))}
@@ -666,7 +690,7 @@ def collect(path):
                 f"Составы команд {g['team1']} и {g['team2']} в этом матче почти полностью "
                 f"совпадают. Состав одной из команд скопирован по ошибке. Какой состав верный?")
 
-    if namesakes:
+    if namesakes and not corrections.RULES.get("one_team_per_division"):
         parts = []
         for nm, d in sorted(namesakes.items()):
             sides = "; ".join(f"{t} — №{n}" for (t, n) in sorted(d["sides"]))
