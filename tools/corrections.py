@@ -18,18 +18,22 @@ SHOOTOUT_NOTE = "Б Буллиты"
 
 
 def _load():
-    fixes, rules, sources = [], {}, []
+    fixes, rules, sources, dates = [], {}, [], []
     for path in sorted(glob.glob(os.path.join(CORR_DIR, "*.json"))):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         sources.append(data.get("source", os.path.basename(path)))
+        if data.get("applied_on"):
+            dates.append(data["applied_on"])
         rules.update(data.get("rules", {}))
         for fx in data.get("fixes", []):
             fixes.append(dict(fx, source=data.get("source", "")))
-    return fixes, rules, sources
+    return fixes, rules, sources, dates
 
 
-FIXES, RULES, SOURCES = _load()
+FIXES, RULES, SOURCES, DATES = _load()
+# дата последних внесённых правок, ДД.ММ.ГГГГ
+LAST_DATE = max(DATES, key=lambda d: d.split(".")[::-1]) if DATES else None
 
 
 def _scores(items):
