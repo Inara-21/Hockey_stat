@@ -637,7 +637,38 @@ def collect(path):
     # Однотипные находки по игрокам — одним вопросом на всю группу.
     movers = [(nm, teams) for nm, teams in ptm.items()
               if len(teams) > 1 and nm not in swapped_rosters]
-    if movers and rules.get("one_team_per_division"):
+    same_day_bad = set()
+    if movers and rules.get("players_may_change_teams_not_same_day"):
+        # Ответ организатора: за разные команды можно, но не в один игровой день.
+        day_teams = defaultdict(lambda: defaultdict(set))
+        day_rows = defaultdict(lambda: defaultdict(set))
+        for g in games:
+            for t, r in ((g["team1"], g["roster1"]), (g["team2"], g["roster2"])):
+                for n, nm in r:
+                    if nm:
+                        day_teams[nm][g["date"]].add(t)
+                        day_rows[nm][g["date"]].add(g["row"])
+        for nm, teams in sorted(movers):
+            bad_days = sorted(d for d, ts in day_teams[nm].items() if len(ts) > 1)
+            if not bad_days:
+                continue
+            same_day_bad.add(nm)
+            parts = []
+            for t, c in teams.most_common():
+                nums = sorted(team_num_rows.get((nm, t), {}), key=lambda n: -len(team_num_rows[(nm, t)][n]))
+                parts.append(f"{t}" + (f" (№{', №'.join(nums)})" if nums else ""))
+            text = (f"{nm} в один игровой день записан за разные команды: " + ", ".join(parts) +
+                    f". Таких дней: {len(bad_days)} из {len(day_teams[nm])}, например "
+                    f"{bad_days[0].strftime('%d.%m.%Y')}.")
+            both = namesakes.get(nm, {}).get("rows", set())
+            if both:
+                text += f" В {n_matches(len(both))} — сразу за обе команды одного матча."
+            add(ERROR, None, "игрок за несколько команд", text,
+                rows=sorted({r for d in bad_days for r in day_rows[nm][d]}),
+                fix="За разные команды можно, но не в один игровой день. За какую команду он играл в эти дни?",
+                ready=False)
+            problems[-1]["players"] = [nm]
+    elif movers and rules.get("one_team_per_division"):
         # Ответ организатора: игрок выступает только за одну команду дивизиона.
         for nm, teams in sorted(movers):
             parts = []
@@ -653,7 +684,7 @@ def collect(path):
                 rows=sorted(player_rows[nm]),
                 fix="Игрок выступает только за одну команду дивизиона. За какую?", ready=False)
             problems[-1]["players"] = [nm]
-    elif movers and not rules.get("players_may_change_teams"):
+    elif movers and not rules.get("players_may_change_teams") and not rules.get("players_may_change_teams_not_same_day"):
         lines_m = "; ".join(
             f"{nm}: {', '.join(f'{t} — {c}' for t, c in teams.most_common())}"
             for nm, teams in sorted(movers))
@@ -757,6 +788,8 @@ def collect(path):
     if namesakes and rules.get("no_player_for_both_teams") and not rules.get("one_team_per_division"):
         # Ответ организатора: в одном матче за обе команды играть нельзя.
         for nm, d in sorted(namesakes.items()):
+            if nm in same_day_bad:
+                continue                    # уже описан ошибкой «в один игровой день»
             sides = "; ".join(f"{t} — №{n}" for (t, n) in sorted(d["sides"]))
             add(ERROR, None, "игрок за обе команды в одном матче",
                 f"{nm} записан в составы обеих команд одного матча ({sides}; в {n_matches(len(d['rows']))}). "

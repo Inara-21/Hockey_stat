@@ -21,8 +21,8 @@ SHOOTOUT_NOTE = "Б Буллиты"
 
 def _load():
     fixes, rules, sources, dates, scoped = [], {}, [], [], []
-    global GENERAL_QUESTIONS
-    GENERAL_QUESTIONS = []
+    global GENERAL_QUESTIONS, SITE_CHECKS
+    GENERAL_QUESTIONS, SITE_CHECKS = [], []
     for path in sorted(glob.glob(os.path.join(CORR_DIR, "*.json"))):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -33,12 +33,14 @@ def _load():
         # правила действуют на файлы из scope (по умолчанию — на все)
         scoped.append((data.get("scope", ["*"]), data.get("rules", {})))
         GENERAL_QUESTIONS += [q for q in data.get("general_questions", []) if not q.get("answered")]
+        if data.get("site_check"):
+            SITE_CHECKS.append(data["site_check"])
         for fx in data.get("fixes", []):
             fixes.append(dict(fx, source=data.get("source", "")))
     return fixes, rules, sources, dates, scoped
 
 
-GENERAL_QUESTIONS = []
+GENERAL_QUESTIONS, SITE_CHECKS = [], []
 FIXES, RULES, SOURCES, DATES, SCOPED_RULES = _load()
 
 
