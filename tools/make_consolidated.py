@@ -26,7 +26,7 @@ from openpyxl.worksheet.hyperlink import Hyperlink
 
 import corrections
 from error_report import MONTHS, SRC_DIR
-from hockey_data import read_workbook, read_sheet, norm
+from hockey_data import read_workbook, read_sheet, norm, parse_player, FIRST_COL
 from make_corrected_excel import write_fixes, note, FIXED
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -96,6 +96,21 @@ def copy_sheet(src, dst, row_map=lambda r: r, rows=None):
     dst.freeze_panes = src.freeze_panes
 
 
+def write_rosters(ws, applied):
+    """Верный состав команды: в строке состава меняются ячейки заменённых игроков."""
+    for a in applied:
+        g, fx = a["game"], a["fix"]
+        r = g["labels_seen"][a["side"]] + 1
+        cells = {parse_player(c.value): c for c in ws[r][FIRST_COL - 1:] if norm(c.value)}
+        for (num, was), (_, now) in a["swaps"]:
+            c = cells.get((num, was))
+            if c is None:
+                raise RuntimeError(f"{ws.title} стр. {r}: нет ячейки «{was} №{num}»")
+            old = c.value
+            c.value = f"{now} №{num}"
+            note(c, f"Исправлено по ответу проверяющего ({fx.get('note', '')}).\nБыло: {old}", FIXED)
+
+
 def main():
     out = openpyxl.Workbook()
     summary = out.active
@@ -110,6 +125,8 @@ def main():
         if corr["conflicts"]:
             raise RuntimeError(f"{fname}: правки не сходятся с файлом: {corr['conflicts']}")
         for a in corr["applied"]:
+            if a["fix"].get("team_roster"):
+                continue                      # составы пишутся ниже, на готовый лист
             extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_final",
                                      "was_periods", "judge", "was_judge", "note", "source"}
             if extra:
@@ -156,6 +173,7 @@ def main():
                            f"({fx.get('note', '')}).\nБыло: {was}", FIXED)
         else:
             copy_sheet(ws, dst)
+        write_rosters(dst, [a for a in corr["applied"] if a["fix"].get("team_roster")])
         n_games = len(read_sheet(dst))
         n_fixed = sum(1 for row in dst.iter_rows() for c in row
                       if c.comment and c.fill.fgColor.rgb == FIXED.fgColor.rgb)

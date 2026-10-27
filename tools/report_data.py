@@ -70,12 +70,22 @@ def main(files=None, out=OUT, title=None, note=None):
     applied = defaultdict(lambda: defaultdict(list))
     for path in files:
         games, problems, s = collect(path)
+        team_fixes = defaultdict(list)
         for a in s.get("applied", []):
             g = a["game"]
+            if a["fix"].get("team_roster"):
+                # состав команды меняется во всех её матчах — одна строка на команду
+                team_fixes[(g["comp"], g["date"].year, g["date"].month, a["fix"]["team"])].append(a)
+                continue
             d = g["date"].strftime("%d.%m.%Y") if g["date"] else "—"
             applied[g["comp"]][(g["date"].year, g["date"].month)].append(dict(
                 row=str(g["row"]),
                 match=f"{d}  {g['time'] or '—'}\n{g['team1'] or '—'} — {g['team2'] or '—'}",
+                before=a["before"], after=a["after"], note=a["fix"].get("note", "")))
+        for (comp, y, m, team), items in team_fixes.items():
+            a = items[0]
+            applied[comp][(y, m)].append(dict(
+                row="все", match=f"все матчи команды {team} ({len(items)})",
                 before=a["before"], after=a["after"], note=a["fix"].get("note", "")))
         n_files += 1
         months = sorted(s["breakdown"], key=lambda k: (k[1], k[2]))

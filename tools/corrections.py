@@ -32,7 +32,8 @@ def _load():
         rules.update(data.get("rules", {}))
         # правила действуют на файлы из scope (по умолчанию — на все)
         scoped.append((data.get("scope", ["*"]), data.get("rules", {})))
-        GENERAL_QUESTIONS += [q for q in data.get("general_questions", []) if not q.get("answered")]
+        GENERAL_QUESTIONS += [q for q in data.get("general_questions", [])
+                              if not q.get("answered") and not q.get("superseded")]
         for fx in data.get("fixes", []):
             fixes.append(dict(fx, source=data.get("source", "")))
     return fixes, rules, sources, dates, scoped
@@ -90,7 +91,7 @@ def apply(fname, games):
                            open_questions=[], moved_out=[], moved_in=[])
     by_row = {g["row"]: g for g in games}
     applied, conflicts, drop, misplaced, already, questions, answers, open_q = [], [], set(), [], [], {}, [], []
-    moved_out, moved_in = [], []
+    moved_out, moved_in, team_rosters = [], [], []
     for fx in mine:
         if fx.get("superseded"):
             # правка закрыта: например, проверяющий прислал исправленный файл
@@ -101,6 +102,9 @@ def apply(fname, games):
         if fx.get("open_question"):
             # вопрос к проверяющему по его ответу — выводится в отчёте отдельной строкой
             open_q.append(fx)
+            continue
+        if fx.get("team_roster"):
+            team_rosters.append(fx)          # после переноса матчей: им тоже нужна правка
             continue
         g = by_row.get(fx["row"])
         if fx.get("move_to"):
@@ -221,6 +225,28 @@ def apply(fname, games):
         g["moved_from"] = (fx["file"], fx["row"])
         games = games + [g]
         moved_in.append(dict(fix=fx, game=g, origin=origin))
+
+    for fx in team_rosters:
+        # Верный состав команды от проверяющего: во всех матчах команды в файле
+        # игроки под этими номерами заменяются. Порядок игроков — как в файле.
+        was = [tuple(x) for x in fx["was_roster"]]
+        swap = {(r["number"], r["was"]): (r["number"], r["player"]) for r in fx["replace"]}
+        now = [swap.get(p, p) for p in was]
+        for g in games:
+            for key, team in (("roster1", g["team1"]), ("roster2", g["team2"])):
+                if team != fx["team"]:
+                    continue
+                if g[key] == now:
+                    already.append(dict(fix=fx, game=g))
+                elif g[key] != was:
+                    conflicts.append(dict(fix=fx, game=g, why=f"состав команды {team} в этом матче "
+                                                             f"не тот, на который рассчитана правка"))
+                else:
+                    g[key] = list(now)
+                    swaps = [(p, swap[p]) for p in was if p in swap]
+                    applied.append(dict(fix=fx, game=g, side=key, swaps=swaps,
+                                        before=f"{team}: " + ", ".join(f"№{a[0]} {a[1]}" for a, _ in swaps),
+                                        after=f"{team}: " + ", ".join(f"№{b[0]} {b[1]}" for _, b in swaps)))
 
     kept = [g for g in games if g["row"] not in drop]
     return kept, dict(applied=applied, conflicts=conflicts, misplaced=misplaced, already=already,
