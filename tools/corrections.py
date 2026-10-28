@@ -228,11 +228,14 @@ def apply(fname, games):
 
     for fx in team_rosters:
         # Верный состав команды от проверяющего: во всех матчах команды в файле
-        # игроки под этими номерами заменяются. Порядок игроков — как в файле.
+        # (или только в строках rows) игроки под этими номерами заменяются.
+        # Порядок игроков — как в файле.
         was = [tuple(x) for x in fx["was_roster"]]
         swap = {(r["number"], r["was"]): (r["number"], r["player"]) for r in fx["replace"]}
         now = [swap.get(p, p) for p in was]
         for g in games:
+            if fx.get("rows") and g["row"] not in fx["rows"]:
+                continue
             for key, team in (("roster1", g["team1"]), ("roster2", g["team2"])):
                 if team != fx["team"]:
                     continue

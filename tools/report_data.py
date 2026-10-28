@@ -84,8 +84,10 @@ def main(files=None, out=OUT, title=None, note=None):
                 before=a["before"], after=a["after"], note=a["fix"].get("note", "")))
         for (comp, y, m, team), items in team_fixes.items():
             a = items[0]
+            rows = a["fix"].get("rows")
             applied[comp][(y, m)].append(dict(
-                row="все", match=f"все матчи команды {team} ({len(items)})",
+                row=", ".join(map(str, rows)) if rows else "все",
+                match=f"матчи команды {team}" if rows else f"все матчи команды {team} ({len(items)})",
                 before=a["before"], after=a["after"], note=a["fix"].get("note", "")))
         n_files += 1
         months = sorted(s["breakdown"], key=lambda k: (k[1], k[2]))
