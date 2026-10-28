@@ -1,0 +1,35 @@
+{
+ "note": "Файлы, сделанные из присланных книг: копия одного листа, номера строк и столбцов как на этом листе",
+ "files": {
+  "2026-09_vostok_div1.xlsx": {
+   "file": "vostok_div1_01.07-30.09.xlsx",
+   "sheet": "01.09-31.09",
+   "received": "28.10.2026",
+   "folder": "data/incoming/2026-10-28"
+  },
+  "2026-09_vostok_div2.xlsx": {
+   "file": "vostok_div2_01.07-30.09.xlsx",
+   "sheet": "01.09-31.09",
+   "received": "28.10.2026",
+   "folder": "data/incoming/2026-10-28"
+  },
+  "2026-09_zapad_div1.xlsx": {
+   "file": "zapad_div1_01.07-30.09.xlsx",
+   "sheet": "01.09-31.09",
+   "received": "28.10.2026",
+   "folder": "data/incoming/2026-10-28"
+  },
+  "2026-09_zapad_div2.xlsx": {
+   "file": "zapad_div2_01.07-30.09.xlsx",
+   "sheet": "01.09-31.09",
+   "received": "28.10.2026",
+   "folder": "data/incoming/2026-10-28"
+  },
+  "2026-09_centr_div1.xlsx": {
+   "file": "centr_div1_01.07-18.10.xlsx",
+   "sheet": "сентябрь",
+   "received": "28.10.2026",
+   "folder": "data/incoming/2026-10-28"
+  }
+ }
+}

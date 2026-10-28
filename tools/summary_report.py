@@ -128,6 +128,12 @@ def main():
         games_grand=sum(len(x["games"]) for x in files),
         misplaced_total=sum(x["misplaced"] for x in files),
         comps=sorted(by_comp),
+        # файлы, сделанные из присланных книг: откуда взят лист
+        origins=json.load(open(os.path.join(SRC_DIR, "origins.json"), encoding="utf-8"))["files"]
+        if os.path.exists(os.path.join(SRC_DIR, "origins.json")) else {},
+        # месяцы, за которые по дивизиону нет файла
+        missing=[dict(comp=c, month=mo) for c in sorted(by_comp) for mo in month_labels
+                 if mo not in {x["month"] for x in by_comp[c]}],
         divisions_all=[dict(comp=c, answered=any(x["answered"] for x in by_comp[c])) for c in sorted(by_comp)],
     )
     with open(OUT, "w", encoding="utf-8") as f:

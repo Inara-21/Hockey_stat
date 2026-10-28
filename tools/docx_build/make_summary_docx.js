@@ -67,16 +67,34 @@ children.push(H1("Примечания"));
 {
   const done = data.divisions_all.filter(x => x.answered).map(x => x.comp);
   const wait = data.divisions_all.filter(x => !x.answered).map(x => x.comp);
+  // месяцы, по которым ответы есть, и месяцы, по которым их ещё нет
+  const doneMonths = data.months.filter(m => data.files.some(f => f.month === m && f.answered));
+  const newMonths = data.months.filter(m => !doneMonths.includes(m));
   const parts = [];
-  if (done.length) parts.push(`Ответы проверяющих внесены${data.corrections_date ? " " + data.corrections_date : ""} по: ${done.join(", ")}. `
+  if (done.length) parts.push(`Ответы проверяющих${newMonths.length ? " за " + doneMonths.join(", ") : ""} внесены`
+    + `${data.corrections_date ? " " + data.corrections_date : ""} по: ${done.join(", ")}. `
     + "По ним в отчёте только то, что осталось.");
-  const runs = [t("1. ", { b: true }), t(parts.join(" ") + (wait.length ? " " : ""))];
+  const runs = [t("1. ", { b: true }), t(parts.join(" ") + (wait.length || newMonths.length ? " " : ""))];
   if (wait.length) runs.push(t(`Ответов пока нет по: ${wait.join(", ")}`, { hl: true }), t(" — указаны все найденные ошибки."));
+  if (newMonths.length && done.length)
+    runs.push(t(`${cap(newMonths.join(", "))} ${newMonths.length > 1 ? "проверены" : "проверен"} впервые — указаны все найденные ошибки.`, { hl: true }));
   children.push(p(runs, { after: 120 }));
+}
+// откуда взяты файлы, сделанные из присланных книг
+let noteNo = 2;
+const origins = Object.entries(data.origins || {});
+if (origins.length) {
+  const bySheet = {};
+  origins.forEach(([f, o]) => { (bySheet[`лист ${o.sheet}`] = bySheet[`лист ${o.sheet}`] || []).push(f); });
+  const where = Object.entries(bySheet).map(([sh, fs]) => `${fs.join(", ")} — ${sh}`).join("; ");
+  const dates = [...new Set(origins.map(([, o]) => o.received))].join(", ");
+  children.push(p([t(`${noteNo++}. Откуда взяты строки. `, { b: true }),
+    t(`Эти файлы сделаны из книг, присланных ${dates}: в каждом — копия одного листа, номера строк и столбцов `
+      + `как на этом листе. ${where}.`)], { after: 120 }));
 }
 // таблицы Составы команд есть только там, где остались ошибки в составах
 if (data.divisions.some(d => (d.teams || []).length))
-  children.push(p([t("2. Ошибки в составах систематические. ", { b: true, hl: true }),
+  children.push(p([t(`${noteNo++}. Ошибки в составах систематические. `, { b: true, hl: true }),
     t("Похоже, составы команд копировались из матча в матч, поэтому одна и та же ошибка повторяется во "
       + "всех матчах команды. Исправлять каждый матч не нужно — достаточно прислать верные составы команд "
       + "с игровыми номерами: они приведены в разделах дивизионов в таблицах Составы команд, ошибочные "
@@ -180,13 +198,15 @@ if (data.misplaced_total)
   children.push(p(t(`В итог не включены матчи под вопросом: ${data.misplaced_total} — см. раздел Конференция ЗАПАД (2 Дивизион).`,
     { pt: 9, color: MUTED }), { before: 80 }));
 
-// ------------------------------------------------------------ сентябрь
-children.push(new Paragraph({ children: [t("Ждём данные за сентябрь", { pt: 15, b: true, color: ACCENT, hl: true })],
-  spacing: { before: 320, after: 140 }, keepNext: true,
-  border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: ACCENT, space: 6 } } }));
-children.push(p(t("Не хватает матчей за сентябрь 2026 по всем дивизионам. Ждём файлы — после получения "
-  + "проверим их так же.", { pt: 11, b: true }), { after: 80 }));
-data.comps.forEach(c => children.push(p(t(`${c} — сентябрь 2026: нет данных`, { pt: 10 }), { after: 30 })));
+// ------------------------------------------------------------ недостающие месяцы
+if (data.missing.length) {
+  children.push(new Paragraph({ children: [t("Ждём данные", { pt: 15, b: true, color: ACCENT, hl: true })],
+    spacing: { before: 320, after: 140 }, keepNext: true,
+    border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: ACCENT, space: 6 } } }));
+  children.push(p(t("Не хватает матчей за эти месяцы. Ждём файлы — после получения проверим их так же.",
+    { pt: 11, b: true }), { after: 80 }));
+  data.missing.forEach(x => children.push(p(t(`${x.comp} — ${x.month}: нет данных`, { pt: 10 }), { after: 30 })));
+}
 
 const doc = new Document({
   styles: { default: { document: { run: { font: FONT, size: sz(10), color: INK } } } },

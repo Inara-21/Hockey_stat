@@ -18,7 +18,7 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import openpyxl
-from hockey_data import read_workbook, parse_score
+from hockey_data import read_workbook, parse_score, norm
 import corrections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -111,6 +111,30 @@ def period_sums(g):
 
 
 NAME_PREFIX = re.compile(r"^\s*\d+\s*[).．.]\s*")
+
+
+def score_from_time(raw):
+    """Счёт, который Excel превратил во время: «0.1701…» (04:05) или «0:01:00».
+    -> («4:5», «04:05») или None."""
+    t = norm(raw)
+    m = re.fullmatch(r"0\.\d+", t)
+    if m:
+        minutes = round(float(t) * 24 * 60)
+    else:
+        m = re.fullmatch(r"(\d{1,2}):(\d{2}):00", t)
+        if not m:
+            return None
+        minutes = int(m.group(1)) * 60 + int(m.group(2))
+    h, mi = divmod(minutes, 60)
+    return f"{h}:{mi}", f"{h:02d}:{mi:02d}"
+
+
+def shootout_period(g):
+    """Буллиты записаны четвёртым периодом: после трёх периодов ничья, четвёртый 1:0 или 0:1."""
+    per = [parse_score(p) for p in g["periods_raw"]]
+    if len(per) != 4 or any(x[0] is None for x in per) or per[3] not in ((1, 0), (0, 1)):
+        return False
+    return sum(x[0] for x in per[:3]) == sum(x[1] for x in per[:3])
 
 
 def repair(games):
@@ -316,6 +340,11 @@ def collect(path):
         shown = ", ".join(f"стр. {r}" for r in rows[:8])
         return shown + (f" и ещё {len(rows) - 8}" if len(rows) > 8 else "")
 
+    # как в этом файле записывают буллиты: пометкой Б Буллиты или четвёртым периодом
+    shootout_as_period = (sum(1 for g in games if shootout_period(g))
+                          > sum(1 for g in games if g["shootout"]))
+    no_time = []
+
     # ---------- по каждому матчу
     for g in games:
         for f in REQUIRED:
@@ -328,7 +357,9 @@ def collect(path):
         if g["date"] is None:
             add(ERROR, g, "дата не разобрана",
                 f"Дата не читается, записано: {g['date_kind']}.")
-        if g["time"] is None:
+        if g["time"] is None and g["time_kind"] == "пусто":
+            no_time.append(g)
+        elif g["time"] is None:
             add(ERROR, g, "время не разобрано",
                 f"Время не читается, записано: {g['time_kind']}.")
         if not g["team1"] or not g["team2"]:
@@ -349,14 +380,26 @@ def collect(path):
         if not g["final_raw"]:
             add(ERROR, g, "пустой итоговый счёт", "Итоговый счёт не заполнен.")
         elif g["goals1"] is None:
-            add(ERROR, g, "итог не разобран",
-                f"Итоговый счёт не читается, записано: {g['final_raw']}.")
+            as_time = score_from_time(g["final_raw"])
+            if as_time:
+                add(ERROR, g, "итог не разобран",
+                    f"Итоговый счёт не читается: Excel записал его как время {as_time[1]}.",
+                    fix=f"Похоже, счёт {as_time[0]}. Подтверждаете?")
+            else:
+                add(ERROR, g, "итог не разобран",
+                    f"Итоговый счёт не читается, записано: {g['final_raw']}.")
         if not g["periods_raw"]:
             add(ERROR, g, "пустые периоды", "Счёт по периодам не заполнен.")
         for p in g["periods_raw"]:
             if parse_score(p)[0] is None:
-                add(ERROR, g, "период не разобран",
-                    f"Счёт периода не читается, записано: {p}.")
+                as_time = score_from_time(p)
+                if as_time:
+                    add(ERROR, g, "период не разобран",
+                        f"Счёт периода не читается: Excel записал его как время {as_time[1]}.",
+                        fix=f"Похоже, счёт периода {as_time[0]}. Подтверждаете?")
+                else:
+                    add(ERROR, g, "период не разобран",
+                        f"Счёт периода не читается, записано: {p}.")
 
         sh, sa = period_sums(g)
         has_sum = sh is not None and bool(g["periods_raw"])
@@ -388,11 +431,24 @@ def collect(path):
                 if not tie_plus_one:
                     add(ERROR, g, "счёт не сходится с периодами",
                         "Счёт не сходится с суммой по периодам.")
+            elif tie_plus_one and shootout_as_period:
+                win = "1:0" if g["goals1"] > g["goals2"] else "0:1"
+                add(ERROR, g, "похоже на буллиты, но пометки нет",
+                    "После трёх периодов ничья, а буллиты не записаны.",
+                    fix=f"Похоже на победу по буллитам: дописать буллиты четвёртым периодом {win}, "
+                        f"как в остальных матчах файла. Подтверждаете?")
             elif tie_plus_one:
                 add(ERROR, g, "похоже на буллиты, но пометки нет",
                     "После трёх периодов ничья, а пометки Б Буллиты нет.",
                     fix="Похоже на победу по буллитам: поставить пометку Б Буллиты. "
                         "Подтверждаете?")
+            elif (len(g["periods_raw"]) == 4 and not shootout_period(g)
+                  and period_sums(dict(g, periods_raw=g["periods_raw"][:3])) == (g["goals1"], g["goals2"])):
+                add(ERROR, g, "счёт не сходится с периодами",
+                    f"Счёт не сходится с суммой по периодам: лишний четвёртый период "
+                    f"{g['periods_raw'][3]}, а сумма трёх периодов совпадает с итогом.",
+                    fix=f"Похоже, четвёртый период {g['periods_raw'][3]} записан по ошибке: после трёх "
+                        f"периодов ничьей нет. Убрать его? Подтверждаете?")
             elif (g["goals1"], g["goals2"]) == (sa, sh):
                 by_periods = g["team1"] if sh > sa else g["team2"]
                 by_final = g["team1"] if g["goals1"] > g["goals2"] else g["team2"]
@@ -456,6 +512,12 @@ def collect(path):
                 add(ERROR, gs[0], "команда в двух матчах одновременно",
                     f"{d.strftime('%d.%m.%Y')} в {t} команда {team} указана сразу в {c} матчах. "
                     f"Какое время верное?")
+
+    if no_time:
+        pairs = sorted({" — ".join(sorted((g["team1"], g["team2"]))) for g in no_time})
+        add(ERROR, None, "не указано время",
+            f"Не указано время начала в {n_matches(len(no_time))}: {', '.join(pairs)}.",
+            fix="Во сколько начинались эти матчи?", rows=[g["row"] for g in no_time], ready=False)
 
     # Один файл — один месяц и одно соревнование: дата или название из другого
     # месяца или другого турнира видна прямо по файлу, спрашивать не о чем.
@@ -748,9 +810,12 @@ def collect(path):
     breakdown = Counter()
     undated = 0
     for g in games:
-        if g["date"]:
+        if month:
+            # файл за один месяц: матч с ошибочной датой считается в месяце файла
+            breakdown[(g["comp"], y, m)] += 1
+        elif g["date"]:
             breakdown[(g["comp"], g["date"].year, g["date"].month)] += 1
-        else:
+        if not g["date"]:
             undated += 1
 
     wb = openpyxl.load_workbook(path)
@@ -760,7 +825,7 @@ def collect(path):
         sheets=dict(Counter(g["sheet"] for g in games)),
         comps=dict(Counter(g["comp"] for g in games)),
         teams=len(names), players=len(ptm),
-        shootouts=sum(1 for g in games if g["shootout"]),
+        shootouts=sum(1 for g in games if g["shootout"] or shootout_period(g)),
         rosters=dict(sorted(Counter((len(g["roster1"]), len(g["roster2"])) for g in games).items())),
         dates=(min(byday), max(byday)) if byday else None,
         days=len(byday),
