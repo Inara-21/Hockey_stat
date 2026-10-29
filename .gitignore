@@ -20,3 +20,6 @@ reports/report_data.json
 
 # Кеш страниц сайта лиги (tools/site_lookup.py)
 data/site_cache/
+
+# Протоколы игровых дней (PDF) — собираются заново: python3 tools/make_protocols.py
+reports/protokoly/
