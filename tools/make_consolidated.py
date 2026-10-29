@@ -195,7 +195,7 @@ def main():
         n_games = len(read_sheet(dst))
         n_fixed = sum(1 for row in dst.iter_rows() for c in row
                       if c.comment and c.fill.fgColor.rgb == FIXED.fgColor.rgb)
-        rows.append(dict(name=name, file=fname, comp=games[0]["comp"], month=ws.title, games=n_games,
+        rows.append(dict(name=name, file=fname, comp=games[0]["comp"], month=f"{MONTHS[sheet_name(fname)[1][3]].capitalize()} {sheet_name(fname)[1][2]}", games=n_games,
                          fixes=n_fixed, misplaced=len(corr["misplaced"]), reviewer_file=bool(archived),
                          moved_in=len(corr["moved_in"]), moved_out=len(corr["moved_out"])))
 
