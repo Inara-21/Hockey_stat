@@ -33,43 +33,61 @@ SRC = os.path.join(ROOT, "data", "source")
 OUT = os.path.join(ROOT, "reports", "protokoly")
 CONF = {"vostok": "ВОСТОК", "zapad": "ЗАПАД", "centr": "ЦЕНТР"}
 
-CSS_EXTRA = """
+# Размеры шрифтов, пт. Подобраны максимальными, при которых на данных всех дивизионов
+# всё помещается: ни одна строка не шире карточки (имя и отчество — в одну строку),
+# лист с четырьмя карточками — на одной странице. Проверка: tools/fit_protocol_sizes.py
+SIZES = {
+    "champ": 13,     # название чемпионата
+    "head": 11,      # дивизион, ПРОТОКОЛ ИГРОВОГО ДНЯ, дата в шапке
+    "label": 6.3,    # подписи полей
+    "data": 7.7,     # данные в карточке
+    "big": 9.7,      # итоговый счёт, победитель
+    "th": 6.3,       # шапка таблицы состава
+    "sur": 7.2,      # фамилия и номер игрока
+    "io": 6.6,       # имя и отчество игрока
+    "foot": 10,      # номер листа
+}
+
+
+def css_extra(z=None):
+    z = dict(SIZES, **(z or {}))
+    return """
 .sheet { padding-top:1.5mm; }   /* без отступа значок над Й в заголовке печатается внизу предыдущей страницы */
-/* масштаб 90%: так всё помещается по ширине; без явного масштаба браузер сам ужимает лист,
-   если что-то шире страницы, и результат зависит от данных */
-body { zoom:0.9; }
-.grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
-/* лист — ровно страница (A4 без полей: 297 − 21 − 14 = 262 мм, с учётом масштаба),
-   номер листа — в правом нижнем углу */
-.sheet { position:relative; height:290mm; }
-.foot { position:absolute; right:0; bottom:0; font-size:12px; font-weight:400; color:#000; }
+/* лист — ровно страница (A4 без полей: 297 − 21 − 14 = 262 мм), номер листа — в правом нижнем углу */
+.sheet { position:relative; height:261mm; }
+.foot { position:absolute; right:0; bottom:0; font-size:%(foot)spt; font-weight:400; color:#000; }
+.grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:4mm 5mm; }
 .head { margin-bottom:8mm; }
 .head .top { display:grid; grid-template-columns:16mm 1fr 16mm; align-items:center; margin-bottom:5mm; }
 .head .top img.logo { height:13mm; width:auto; display:block; }
-.head .league { margin:0; text-transform:none; font-size:17px; white-space:nowrap; }
-.io { font-size:7.4px; }
-.head .division { text-align:center; font-weight:700; font-size:14px; color:#2b2f4c;
-                  letter-spacing:.4px; margin:0 0 5mm 0; }   /* размером как ПРОТОКОЛ ИГРОВОГО ДНЯ */
-.grid { gap:5mm; }
-.card { padding:3.6mm 4.5mm; break-inside:avoid; }
-.fld.wide { margin-bottom:2.2mm; }
-.row2 { margin-bottom:1.6mm; }
-.rosters { margin:2mm 0; }
-.fld.wide2 { margin-top:1.4mm; }
+.head .league { margin:0; text-transform:none; font-size:%(champ)spt; white-space:nowrap; }
+.head .division { text-align:center; font-weight:700; font-size:%(head)spt; letter-spacing:.4px; margin:0 0 5mm 0; }
+.head .title, .head .date { font-size:%(head)spt; }
+body { font-size:%(data)spt; }
+.lb, .mark { font-size:%(label)spt; }
+.card { padding:3mm 3mm; break-inside:avoid; }
+.fld.wide { margin-bottom:1.6mm; }
+.row2 { margin-bottom:1.2mm; gap:3mm; }
+.rosters { margin:1.6mm 0; gap:2.5mm; }
+.fld.wide2 { margin-top:1mm; }
+.fld.off { margin-top:0.8mm; }
 .nowrap { white-space:nowrap; }
-table.ros td { vertical-align:top; }
-table.ros td.num { vertical-align:middle; text-align:right; padding-right:4px; }
-.fld.off { margin-top:1.2mm; }
+table.ros th { font-size:%(th)spt; }
+table.ros td { font-size:%(sur)spt; vertical-align:top; padding:1px 2px; line-height:1.12; }
+table.ros td.num, table.ros th.num { width:5mm; }
+table.ros td.num { vertical-align:middle; text-align:right; padding-right:2px; }
+.io { font-size:%(io)spt; }
+.sur { white-space:nowrap; }   /* фамилия — одна строка; отчество в редких случаях переносится на третью */
 /* статичная информация — чёрным прямым шрифтом, заполняемая — синим курсивом */
 body, .lb, table.ros th, .head .league, .head .title, .head .date { color:#000; font-style:normal; }
 .vl, table.ros td, .mark, .head .division, .head .date .dt { color:#1a3a86; font-style:italic; }
 .vl.team { font-weight:700; white-space:nowrap; }   /* названия команд — жирным, без переноса по дефису */
 .sur { font-weight:400; }       /* фамилии игроков — обычным */
-.vl.big { font-weight:700; font-size:12px; white-space:nowrap; }   /* итоговый счёт и победитель */
+.vl.big { font-weight:700; font-size:%(big)spt; white-space:nowrap; }   /* итоговый счёт и победитель */
 /* строка результата: победитель — по ширине названия, счёт — остальное; БУЛЛИТЫ при нехватке места — под счётом */
 .row2.res { grid-template-columns:minmax(0,1fr) max-content; }
 .fld.score { flex-wrap:wrap; }
-"""
+""" % z
 
 
 def shootout_period(g):
@@ -244,13 +262,18 @@ def check_pdf(pdf, sheets):
             want = [g["date"].strftime("%d.%m.%Y"), g["time"], g["team1"].upper(), g["team2"].upper(),
                     official(g["judge"]), official(g["secretary"]), score_text(g["final_raw"]),
                     sq(periods_text(g)), winner(g).upper()]
-            # фамилия сверяется ниже вместе с номером (одна строка таблицы), имя и отчество — здесь
-            want += [player_parts(nm)[1] for _, nm in g["roster1"] + g["roster2"]]
+            # фамилия сверяется ниже вместе с номером, имя и отчество — по словам: отчество
+            # может стоять на третьей строке ячейки
             missing = [w for w in want if w and sq(w) not in page]
             if missing:
                 problems.append(f"лист {i + 1}, стр. {g['row']} {g['team1']} — {g['team2']}: не найдено {missing[:4]}")
         # номер игрока стоит слева от его фамилии в той же строке таблицы: сколько раз пара
         # (номер, фамилия) встречается на листе — столько раз она должна стоять в карточках
+        need_io = Counter(w for g in chunk for _, nm in g["roster1"] + g["roster2"] for w in player_parts(nm)[1].split())
+        have_io = Counter(w[0] for w in (words[i] if i < len(words) else []))
+        short_io = [w for w, k in need_io.items() if have_io[w] < k]
+        if short_io:
+            problems.append(f"лист {i + 1}: не найдены имена и отчества: {short_io[:4]}")
         need = Counter((n, player_parts(nm)[0]) for g in chunk for n, nm in g["roster1"] + g["roster2"])
         have = numbered_surnames(words[i] if i < len(words) else [])
         short = [f"№{n} {sur}" for (n, sur), k in need.items() if have[(n, sur)] < k]
@@ -259,7 +282,8 @@ def check_pdf(pdf, sheets):
     return problems
 
 
-def build(fname, logo):
+def page_html(fname, logo, sizes=None):
+    """Страница всех протоколов файла: -> (html, листы, матчи, матчи по дням)."""
     games, _ = corrections.apply(fname, read_workbook(os.path.join(SRC, fname))[0])
     division = games[0]["comp"]
     slots = max(max(len(g["roster1"]), len(g["roster2"])) for g in games)
@@ -271,11 +295,16 @@ def build(fname, logo):
         html_, chunks = day_sheets(sorted(byday[d], key=lambda g: g["time"]), slots, logo, division)
         body += html_
         sheets += chunks
+    page = ('<!doctype html><html><head><meta charset="utf-8">'
+            f'<style>{CSS}{css_extra(sizes)}</style></head><body>{body}</body></html>')
+    return page, sheets, games, byday
+
+
+def build(fname, logo):
+    page, sheets, games, byday = page_html(fname, logo)
     os.makedirs(OUT, exist_ok=True)
     pdf = os.path.join(OUT, file_name(fname))
     tmp = os.path.join(OUT, "_tmp.html")
-    page = ('<!doctype html><html><head><meta charset="utf-8">'
-            f'<style>{CSS}{CSS_EXTRA}</style></head><body>{body}</body></html>')
     layout_problems = measure_layout(page, tmp)
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(page)
