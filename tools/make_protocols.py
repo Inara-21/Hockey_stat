@@ -34,11 +34,13 @@ CONF = {"vostok": "ВОСТОК", "zapad": "ЗАПАД", "centr": "ЦЕНТР"}
 
 CSS_EXTRA = """
 .sheet { padding-top:1.5mm; }   /* без отступа значок над Й в заголовке печатается внизу предыдущей страницы */
+/* лист — ровно страница (A4 без полей: 297 − 21 − 14 мм), номер листа — в правом нижнем углу */
+.sheet { position:relative; height:260mm; }
+.foot { position:absolute; right:0; bottom:0; font-size:10px; font-weight:700; color:#000; }
 .head { margin-bottom:4mm; }
 .head .top { display:grid; grid-template-columns:16mm 1fr 16mm; align-items:center; margin-bottom:2mm; }
 .head .top img.logo { height:13mm; width:auto; display:block; }
 .head .league { margin:0; text-transform:none; font-size:17px; white-space:nowrap; }
-.sur { font-style:normal; font-weight:700; letter-spacing:.2px; }
 .io { font-size:7.4px; }
 .head .division { text-align:center; font-weight:700; font-size:11px; color:#2b2f4c;
                   letter-spacing:.4px; margin:0 0 2.5mm 0; }
@@ -51,6 +53,12 @@ CSS_EXTRA = """
 .nowrap { white-space:nowrap; }
 table.ros td { vertical-align:top; }
 .fld.off { margin-top:1.2mm; }
+/* статичная информация — чёрным прямым шрифтом, заполняемая — синим курсивом */
+body, .lb, table.ros th, .head .league, .head .title, .head .date { color:#000; font-style:normal; }
+.vl, table.ros td, .mark, .head .division, .head .date .dt { color:#1f4fbf; font-style:italic; }
+.vl.team { font-weight:700; white-space:nowrap; }   /* названия команд — жирным, без переноса по дефису */
+.sur { font-weight:400; }       /* фамилии игроков — обычным */
+.vl.big { font-weight:700; font-size:12px; }   /* итоговый счёт и победитель */
 """
 
 
@@ -95,14 +103,14 @@ def card_html(g, slots):
     <div class="fld"><span class="lb">ВРЕМЯ</span><span class="vl">{e(g["time"])}</span></div>
   </div>
   <div class="row2">
-    <div class="fld"><span class="lb">КОМАНДА&nbsp;А</span><span class="vl">{e(g["team1"].upper())}</span></div>
-    <div class="fld"><span class="lb">КОМАНДА&nbsp;В</span><span class="vl">{e(g["team2"].upper())}</span></div>
+    <div class="fld"><span class="lb">КОМАНДА&nbsp;А</span><span class="vl team">{e(g["team1"].upper())}</span></div>
+    <div class="fld"><span class="lb">КОМАНДА&nbsp;В</span><span class="vl team">{e(g["team2"].upper())}</span></div>
   </div>
   <div class="rosters">{roster_table(g["roster1"], slots)}{roster_table(g["roster2"], slots)}</div>
   <div class="row2">
     <div class="fld nowrap"><span class="lb">ИТОГОВЫЙ&nbsp;СЧЁТ</span>
-        <span class="vl">{e(score_text(g["final_raw"]))}</span>{mark}</div>
-    <div class="fld"><span class="lb">ПОБЕДИТЕЛЬ</span><span class="vl">{e(winner(g).upper())}</span></div>
+        <span class="vl big">{e(score_text(g["final_raw"]))}</span>{mark}</div>
+    <div class="fld"><span class="lb">ПОБЕДИТЕЛЬ</span><span class="vl team big">{e(winner(g).upper())}</span></div>
   </div>
   <div class="fld wide2"><span class="lb">СЧЁТ&nbsp;ПО&nbsp;ПЕРИОДАМ</span><span class="vl">{e(periods_text(g))}</span></div>
   <div class="fld off nowrap"><span class="lb">СУДЬЯ</span><span class="vl">{e(g["judge"])}</span></div>
@@ -116,7 +124,8 @@ def day_sheets(day_games, slots, logo, division):
     chunks = [day_games[i:i + CARDS_PER_SHEET] for i in range(0, len(day_games), CARDS_PER_SHEET)]
     out = ""
     for i, chunk in enumerate(chunks):
-        label = e(date) + (f" · лист {i + 1} из {len(chunks)}" if len(chunks) > 1 else "")
+        label = f'<span class="dt">{e(date)}</span>'
+        foot = f'<div class="foot">Лист {i + 1} из {len(chunks)}</div>'
         out += (f'<div class="sheet"><div class="head">'
                 f'<div class="top"><img class="logo" src="data:image/png;base64,{logo}" alt="РХЛ">'
                 # заглавные сразу: при text-transform браузер уводит значок над Й вниз страницы
@@ -127,7 +136,7 @@ def day_sheets(day_games, slots, logo, division):
                 f'<div class="title">ПРОТОКОЛ ИГРОВОГО ДНЯ</div>'
                 f'<div class="side right"><div class="date">{label}</div></div>'
                 f'</div></div>'
-                f'<div class="grid">{"".join(card_html(g, slots) for g in chunk)}</div></div>')
+                f'<div class="grid">{"".join(card_html(g, slots) for g in chunk)}</div>{foot}</div>')
     return out, chunks
 
 
@@ -157,6 +166,8 @@ def check_pdf(pdf, sheets):
         problems.append(f"страниц {len(pages)}, а листов должно быть {len(sheets)}")
     for i, chunk in enumerate(sheets):
         page = pages[i] if i < len(pages) else ""
+        if f"Лист {sum(1 for c in sheets[:i + 1] if c[0]['date'] == chunk[0]['date'])} из" not in page:
+            problems.append(f"лист {i + 1}: нет номера листа внизу страницы")
         if page.count("СОРЕВНОВАНИЕ") != len(chunk):
             problems.append(f"лист {i + 1}: карточек {page.count('СОРЕВНОВАНИЕ')}, а матчей {len(chunk)}")
         for g in chunk:
