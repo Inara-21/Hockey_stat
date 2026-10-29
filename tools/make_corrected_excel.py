@@ -59,6 +59,9 @@ def shown(v):
     if isinstance(v, datetime.timedelta):
         sec = int(v.total_seconds())
         return f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
+    if isinstance(v, datetime.datetime) and v.year <= 1900:
+        hours = round((v - datetime.datetime(1899, 12, 30)).total_seconds() / 3600)
+        return f"{hours} ч, Excel показывал {v:%H:%M}"
     if isinstance(v, datetime.time):
         return v.strftime("%H:%M")
     if isinstance(v, float) and 0 <= v < 1:
@@ -82,6 +85,12 @@ def write_fixes(wb, applied):
             was = c.value
             c.value = fx["label"]
             note(c, f"{why}\nБыло: {was}", FIXED)
+        if "time" in fx:
+            c = ws.cell(g["labels_seen"]["time"], FIRST_COL)
+            was = c.value
+            c.value = datetime.datetime.strptime(fx["time"], "%H:%M").time()   # значение времени, не текст
+            c.number_format = "hh:mm"
+            note(c, f"{why}\nБыло: {shown(was) if was not in (None, '') else 'пусто'}", FIXED)
         if "date" in fx:
             c = ws.cell(g["labels_seen"]["date"], FIRST_COL)
             was = c.value

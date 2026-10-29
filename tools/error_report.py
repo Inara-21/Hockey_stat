@@ -357,6 +357,9 @@ def collect(path):
         if g["date"] is None:
             add(ERROR, g, "дата не разобрана",
                 f"Дата не читается, записано: {g['date_kind']}.")
+        if g["time_kind"] == "больше суток":
+            add(ERROR, g, "время не разобрано",
+                f"Время записано неверно: в ячейке больше суток, Excel показывает его как {g['time']}.")
         if g["time"] is None and g["time_kind"] == "пусто":
             no_time.append(g)
         elif g["time"] is None:

@@ -11,6 +11,7 @@
 Запуск:  python3 tools/make_consolidated.py
 """
 import copy
+import datetime
 import glob
 import os
 import re
@@ -96,6 +97,20 @@ def copy_sheet(src, dst, row_map=lambda r: r, rows=None):
     dst.freeze_panes = src.freeze_panes
 
 
+def normalize_times(ws):
+    """Время начала во всех матчах — значение времени Excel в формате ЧЧ:ММ, как бы оно
+    ни было записано в исходнике (текстом «9:15», временем, датой). Само время не меняется.
+    Время больше суток — ошибка, его не трогаем."""
+    for g in read_sheet(ws):
+        r = g["labels_seen"].get("time")
+        if r is None or not g["time"] or g["time_kind"] == "больше суток":
+            continue
+        h, m = map(int, g["time"].split(":"))
+        c = ws.cell(r, FIRST_COL)
+        c.value = datetime.time(h, m)
+        c.number_format = "hh:mm"
+
+
 def write_rosters(ws, applied):
     """Верный состав команды: в строке состава меняются ячейки заменённых игроков."""
     for a in applied:
@@ -129,7 +144,8 @@ def main():
                 continue                      # составы пишутся ниже, на готовый лист
             extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_final",
                                      "was_periods", "judge", "was_judge", "note", "source",
-                                     "label", "label_row", "was_label", "date", "was_date"}
+                                     "label", "label_row", "was_label", "date", "was_date",
+                                     "time", "was_time"}
             if extra:
                 raise RuntimeError(f"{fname} стр. {a['fix']['row']}: правку вида {extra} записывать в ячейки пока не умею")
         wb = openpyxl.load_workbook(src_path)
@@ -175,6 +191,7 @@ def main():
         else:
             copy_sheet(ws, dst)
         write_rosters(dst, [a for a in corr["applied"] if a["fix"].get("team_roster")])
+        normalize_times(dst)
         n_games = len(read_sheet(dst))
         n_fixed = sum(1 for row in dst.iter_rows() for c in row
                       if c.comment and c.fill.fgColor.rgb == FIXED.fgColor.rgb)
@@ -191,7 +208,8 @@ def main():
     summary["A2"] = (f"С последними правками от {corrections.LAST_DATE}. На каждом листе — копия исходного файла: "
                      "номера строк и столбцов совпадают с исходником.")
     summary["A3"] = "Зелёная ячейка — исправлена, в примечании к ней указано, что было. Жёлтая — матч под вопросом."
-    for r in (2, 3):
+    summary["A4"] = "Время начала во всех матчах — в формате ЧЧ:ММ (значение времени); само время не менялось."
+    for r in (2, 3, 4):
         summary.cell(r, 1).font = Font(name=font, size=10, color="FF5A5F7A")
     head = ["Лист", "Соревнование", "Месяц", "Матчей на листе", "Исправлено ячеек", "Примечание"]
     for j, h in enumerate(head, 1):

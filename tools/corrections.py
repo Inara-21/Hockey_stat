@@ -144,6 +144,16 @@ def apply(fname, games):
                 applied.append(dict(fix=fx, game=g, before=f"подпись строки {fx['label_row']}: {fx['was_label']}",
                                     after=f"подпись строки {fx['label_row']}: {fx['label']}"))
             continue
+        if "time" in fx:
+            if g["time"] == fx["time"]:
+                already.append(dict(fix=fx, game=g))
+            elif (g["time"] or "") != fx.get("was_time", ""):
+                conflicts.append(dict(fix=fx, game=g, why=f"время в файле {g['time'] or 'пусто'}"))
+            else:
+                g["time"], g["time_kind"] = fx["time"], "текст"
+                applied.append(dict(fix=fx, game=g, before=f"время {fx.get('was_time') or 'не указано'}",
+                                    after=f"время {fx['time']}"))
+            continue
         if "date" in fx:
             new_date, was_date = parse_date(fx["date"])[0], parse_date(fx["was_date"])[0]
             if g["date"] == new_date:

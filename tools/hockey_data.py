@@ -77,7 +77,9 @@ def parse_date(v):
 def parse_time(v):
     """-> (строка ЧЧ:ММ | None, вид)."""
     if isinstance(v, datetime.datetime):
-        return v.strftime("%H:%M"), "время"
+        # Excel хранит время долей суток; дата 1900 года — значит, в ячейке больше
+        # суток (например, 859 часов), а Excel показывает только остаток
+        return v.strftime("%H:%M"), ("больше суток" if v.year <= 1900 else "время")
     if isinstance(v, datetime.time):
         return v.strftime("%H:%M"), "время"
     t = norm(v)
