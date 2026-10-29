@@ -42,14 +42,14 @@ body { zoom:0.9; }
 /* лист — ровно страница (A4 без полей: 297 − 21 − 14 = 262 мм, с учётом масштаба),
    номер листа — в правом нижнем углу */
 .sheet { position:relative; height:290mm; }
-.foot { position:absolute; right:0; bottom:0; font-size:10px; font-weight:700; color:#000; }
-.head { margin-bottom:4mm; }
-.head .top { display:grid; grid-template-columns:16mm 1fr 16mm; align-items:center; margin-bottom:2mm; }
+.foot { position:absolute; right:0; bottom:0; font-size:12px; font-weight:400; color:#000; }
+.head { margin-bottom:8mm; }
+.head .top { display:grid; grid-template-columns:16mm 1fr 16mm; align-items:center; margin-bottom:5mm; }
 .head .top img.logo { height:13mm; width:auto; display:block; }
 .head .league { margin:0; text-transform:none; font-size:17px; white-space:nowrap; }
 .io { font-size:7.4px; }
-.head .division { text-align:center; font-weight:700; font-size:11px; color:#2b2f4c;
-                  letter-spacing:.4px; margin:0 0 2.5mm 0; }
+.head .division { text-align:center; font-weight:700; font-size:14px; color:#2b2f4c;
+                  letter-spacing:.4px; margin:0 0 5mm 0; }   /* размером как ПРОТОКОЛ ИГРОВОГО ДНЯ */
 .grid { gap:5mm; }
 .card { padding:3.6mm 4.5mm; break-inside:avoid; }
 .fld.wide { margin-bottom:2.2mm; }
