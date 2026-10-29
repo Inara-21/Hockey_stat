@@ -24,7 +24,7 @@ from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import corrections
-from build_reports import CSS, CHROME, CARDS_PER_SHEET, LEAGUE_TITLE, MONTHS, e, logo_b64, roster_table
+from build_reports import CSS, CHROME, CARDS_PER_SHEET, LEAGUE_TITLE, MONTHS, e, logo_b64
 from hockey_data import parse_score, read_workbook, score_text, winner
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,7 +35,11 @@ CONF = {"vostok": "ВОСТОК", "zapad": "ЗАПАД", "centr": "ЦЕНТР"}
 CSS_EXTRA = """
 .sheet { padding-top:1.5mm; }   /* без отступа значок над Й в заголовке печатается внизу предыдущей страницы */
 .head { margin-bottom:4mm; }
-.head .league { margin-bottom:2.5mm; text-transform:none; }
+.head .top { display:grid; grid-template-columns:16mm 1fr 16mm; align-items:center; margin-bottom:2mm; }
+.head .top img.logo { height:13mm; width:auto; display:block; }
+.head .league { margin:0; text-transform:none; font-size:17px; white-space:nowrap; }
+.sur { font-style:normal; font-weight:700; letter-spacing:.2px; }
+.io { font-size:7.4px; }
 .head .division { text-align:center; font-weight:700; font-size:11px; color:#2b2f4c;
                   letter-spacing:.4px; margin:0 0 2.5mm 0; }
 .grid { gap:5mm; }
@@ -65,6 +69,23 @@ def periods_text(g):
     return ", ".join(score_text(p) for p in g["periods_raw"])
 
 
+def player_parts(name):
+    """ФИО -> (ФАМИЛИЯ, Имя Отчество)."""
+    sur, _, rest = name.strip().partition(" ")
+    return sur.upper(), rest.strip()
+
+
+def roster_table(roster, slots):
+    rows = ""
+    for i in range(slots):
+        num, name = roster[i] if i < len(roster) else ("", "")
+        sur, rest = player_parts(name) if name else ("", "")
+        cell = f'<span class="sur">{e(sur)}</span>' + (f'<br><span class="io">{e(rest)}</span>' if rest else "")
+        rows += f'<tr><td class="num">{e(num)}</td><td class="pl">{cell}</td></tr>'
+    return ('<table class="ros"><tr><th class="num">№</th><th class="pl">ИГРОК</th></tr>'
+            + rows + '</table>')
+
+
 def card_html(g, slots):
     mark = '<span class="mark">БУЛЛИТЫ</span>' if g["shootout"] or shootout_period(g) else ""
     return f'''<div class="card">
@@ -74,14 +95,14 @@ def card_html(g, slots):
     <div class="fld"><span class="lb">ВРЕМЯ</span><span class="vl">{e(g["time"])}</span></div>
   </div>
   <div class="row2">
-    <div class="fld"><span class="lb">КОМАНДА&nbsp;А</span><span class="vl">{e(g["team1"])}</span></div>
-    <div class="fld"><span class="lb">КОМАНДА&nbsp;В</span><span class="vl">{e(g["team2"])}</span></div>
+    <div class="fld"><span class="lb">КОМАНДА&nbsp;А</span><span class="vl">{e(g["team1"].upper())}</span></div>
+    <div class="fld"><span class="lb">КОМАНДА&nbsp;В</span><span class="vl">{e(g["team2"].upper())}</span></div>
   </div>
   <div class="rosters">{roster_table(g["roster1"], slots)}{roster_table(g["roster2"], slots)}</div>
   <div class="row2">
     <div class="fld nowrap"><span class="lb">ИТОГОВЫЙ&nbsp;СЧЁТ</span>
         <span class="vl">{e(score_text(g["final_raw"]))}</span>{mark}</div>
-    <div class="fld"><span class="lb">ПОБЕДИТЕЛЬ</span><span class="vl">{e(winner(g))}</span></div>
+    <div class="fld"><span class="lb">ПОБЕДИТЕЛЬ</span><span class="vl">{e(winner(g).upper())}</span></div>
   </div>
   <div class="fld wide2"><span class="lb">СЧЁТ&nbsp;ПО&nbsp;ПЕРИОДАМ</span><span class="vl">{e(periods_text(g))}</span></div>
   <div class="fld off nowrap"><span class="lb">СУДЬЯ</span><span class="vl">{e(g["judge"])}</span></div>
@@ -97,10 +118,12 @@ def day_sheets(day_games, slots, logo, division):
     for i, chunk in enumerate(chunks):
         label = e(date) + (f" · лист {i + 1} из {len(chunks)}" if len(chunks) > 1 else "")
         out += (f'<div class="sheet"><div class="head">'
-                f'<div class="league">{e(LEAGUE_TITLE.upper())}</div>'   # заглавные сразу: при text-transform браузер уводит значок над Й вниз страницы
+                f'<div class="top"><img class="logo" src="data:image/png;base64,{logo}" alt="РХЛ">'
+                # заглавные сразу: при text-transform браузер уводит значок над Й вниз страницы
+                f'<div class="league">{e(LEAGUE_TITLE.upper())}</div><div></div></div>'
                 f'<div class="division">{e(division)}</div>'
                 f'<div class="subhead">'
-                f'<div class="side left"><img class="logo" src="data:image/png;base64,{logo}" alt="РХЛ"></div>'
+                f'<div class="side left"></div>'
                 f'<div class="title">ПРОТОКОЛ ИГРОВОГО ДНЯ</div>'
                 f'<div class="side right"><div class="date">{label}</div></div>'
                 f'</div></div>'
@@ -137,14 +160,15 @@ def check_pdf(pdf, sheets):
         if page.count("СОРЕВНОВАНИЕ") != len(chunk):
             problems.append(f"лист {i + 1}: карточек {page.count('СОРЕВНОВАНИЕ')}, а матчей {len(chunk)}")
         for g in chunk:
-            want = [g["date"].strftime("%d.%m.%Y"), g["time"], g["team1"], g["team2"], g["judge"], g["secretary"],
-                    score_text(g["final_raw"]), sq(periods_text(g)), winner(g)]
-            want += [nm for _, nm in g["roster1"] + g["roster2"]]
+            want = [g["date"].strftime("%d.%m.%Y"), g["time"], g["team1"].upper(), g["team2"].upper(), g["judge"],
+                    g["secretary"], score_text(g["final_raw"]), sq(periods_text(g)), winner(g).upper()]
+            # фамилия сверяется ниже вместе с номером (одна строка таблицы), имя и отчество — здесь
+            want += [player_parts(nm)[1] for _, nm in g["roster1"] + g["roster2"]]
             missing = [w for w in want if w and sq(w) not in page]
             # номера игроков стоят в своей ячейке рядом с ФИО
             lines = layout[i] if i < len(layout) else ""
             missing += [f"№{n} {nm}" for n, nm in g["roster1"] + g["roster2"]
-                        if n and not re.search(rf"(^|\s){re.escape(n)}\s+{re.escape(nm.split()[0])}", lines, re.M)]
+                        if not re.search(rf"(^|\s){re.escape(n)}\s+{re.escape(player_parts(nm)[0])}", lines, re.M)]
             if missing:
                 problems.append(f"лист {i + 1}, стр. {g['row']} {g['team1']} — {g['team2']}: не найдено {missing[:4]}")
     return problems
