@@ -12,7 +12,7 @@ import glob
 import json
 import os
 
-from hockey_data import parse_score, read_workbook
+from hockey_data import label_key, norm, parse_date, parse_player, parse_score, read_workbook
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CORR_DIR = os.path.join(ROOT, "data", "corrections")
@@ -128,6 +128,31 @@ def apply(fname, games):
             else:
                 g["judge"] = fx["judge"]
                 applied.append(dict(fix=fx, game=g, before="судья не указан", after=f"судья {fx['judge']}"))
+            continue
+        if "label" in fx:
+            # Подпись строки испорчена, а значения на месте: ставим верную подпись.
+            field = label_key(fx["label"])
+            u = g.get("unlabeled", {}).get(fx["label_row"])
+            if field in g["labels_seen"]:
+                already.append(dict(fix=fx, game=g))
+            elif u is None or u[0] != norm(fx["was_label"]):
+                conflicts.append(dict(fix=fx, game=g, why=f"в строке {fx['label_row']} другая подпись"))
+            else:
+                g["labels_seen"][field] = fx["label_row"]
+                vals = [v for v in u[1] if v]
+                g[field] = [parse_player(v) for v in vals] if field in ("roster1", "roster2") else vals
+                applied.append(dict(fix=fx, game=g, before=f"подпись строки {fx['label_row']}: {fx['was_label']}",
+                                    after=f"подпись строки {fx['label_row']}: {fx['label']}"))
+            continue
+        if "date" in fx:
+            new_date, was_date = parse_date(fx["date"])[0], parse_date(fx["was_date"])[0]
+            if g["date"] == new_date:
+                already.append(dict(fix=fx, game=g))
+            elif g["date"] != was_date:
+                conflicts.append(dict(fix=fx, game=g, why=f"дата в файле {g['date']}"))
+            else:
+                g["date"], g["date_kind"] = new_date, "дата"
+                applied.append(dict(fix=fx, game=g, before=f"дата {fx['was_date']}", after=f"дата {fx['date']}"))
             continue
         if fx.get("answer"):
             # Ответ без конкретной правки (например, «исправил у себя») — к ошибке.

@@ -100,7 +100,7 @@ def main():
         others = []
         for x in items:
             rows = [finding(p) for p in x["errors"] if p["what"] != ROSTER_KIND]
-            others.append(dict(month=x["month"], findings=rows))
+            others.append(dict(month=x["month"], file=x["file"], findings=rows))
         divisions.append(dict(comp=comp, teams=teams, others=others,
                               answered=any(x["answered"] for x in items)))
 

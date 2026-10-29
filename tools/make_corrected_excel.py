@@ -15,6 +15,7 @@ data/corrections (ответы проверяющих), заново прове�
     python3 tools/make_corrected_excel.py 2026-07_zapad_div1.xlsx ...
 """
 import copy
+import datetime
 import os
 import sys
 
@@ -60,7 +61,20 @@ def write_fixes(wb, applied):
         ws = wb[g["sheet"]]
         fr = g["labels_seen"].get("final")
         pr = g["labels_seen"].get("periods")
-        why = f"Исправлено по ответу проверяющего ({fx.get('note', '')})."
+        who = ("по решению исполнителя" if fx.get("source", "").startswith("Решение исполнителя")
+               else "по ответу проверяющего")
+        why = f"Исправлено {who} ({fx.get('note', '')})."
+        if "label" in fx:
+            c = ws.cell(fx["label_row"], 1)
+            was = c.value
+            c.value = fx["label"]
+            note(c, f"{why}\nБыло: {was}", FIXED)
+        if "date" in fx:
+            c = ws.cell(g["labels_seen"]["date"], FIRST_COL)
+            was = c.value
+            d = g["date"]
+            c.value = datetime.datetime(d.year, d.month, d.day) if isinstance(was, datetime.datetime) else fx["date"]
+            note(c, f"{why}\nБыло: {was.strftime('%d.%m.%Y') if hasattr(was, 'strftime') else was}", FIXED)
         if "final" in fx:
             c = ws.cell(fr, FIRST_COL)
             was = c.value

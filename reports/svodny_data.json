@@ -1,5 +1,5 @@
 {
- "date": "28.10.2026",
+ "date": "29.10.2026",
  "corrections_source": [
   "Ответы проверяющих ЦЕНТРА на отчёт от 01.10.2026 (файл Otchet_o_proverke_131026.docx)",
   "Ответы проверяющих в сводном отчёте от 13.10.2026",
@@ -160,14 +160,17 @@
    "others": [
     {
      "month": "июль 2026",
+     "file": "2026-07_vostok_div1.xlsx",
      "findings": []
     },
     {
      "month": "август 2026",
+     "file": "2026-08_vostok_div1.xlsx",
      "findings": []
     },
     {
      "month": "сентябрь 2026",
+     "file": "2026-09_vostok_div1.xlsx",
      "findings": [
       {
        "what": "счёт не сходится с периодами",
@@ -189,14 +192,17 @@
    "others": [
     {
      "month": "июль 2026",
+     "file": "2026-07_zapad_div1.xlsx",
      "findings": []
     },
     {
      "month": "август 2026",
+     "file": "2026-08_zapad_div1.xlsx",
      "findings": []
     },
     {
      "month": "сентябрь 2026",
+     "file": "2026-09_zapad_div1.xlsx",
      "findings": [
       {
        "what": "не указано время",
@@ -218,14 +224,17 @@
    "others": [
     {
      "month": "июль 2026",
+     "file": "2026-07_centr_div1.xlsx",
      "findings": []
     },
     {
      "month": "август 2026",
+     "file": "2026-08_centr_div1.xlsx",
      "findings": []
     },
     {
      "month": "сентябрь 2026",
+     "file": "2026-09_centr_div1.xlsx",
      "findings": [
       {
        "what": "итог не разобран",

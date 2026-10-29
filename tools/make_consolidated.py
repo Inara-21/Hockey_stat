@@ -128,7 +128,8 @@ def main():
             if a["fix"].get("team_roster"):
                 continue                      # составы пишутся ниже, на готовый лист
             extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_final",
-                                     "was_periods", "judge", "was_judge", "note", "source"}
+                                     "was_periods", "judge", "was_judge", "note", "source",
+                                     "label", "label_row", "was_label", "date", "was_date"}
             if extra:
                 raise RuntimeError(f"{fname} стр. {a['fix']['row']}: правку вида {extra} записывать в ячейки пока не умею")
         wb = openpyxl.load_workbook(src_path)

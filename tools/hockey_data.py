@@ -144,6 +144,12 @@ def read_sheet(ws):
 
         for r in range(start, end + 1):
             key = label_key(ws.cell(row=r, column=1).value)
+            if key is None and norm(ws.cell(row=r, column=1).value) and r + 1 <= end:
+                # испорченная подпись: запоминаем её и строку ниже — правка из реестра
+                # может поставить верную подпись
+                game.setdefault("unlabeled", {})[r] = (
+                    norm(ws.cell(row=r, column=1).value),
+                    [norm(ws.cell(row=r + 1, column=c).value) for c in range(FIRST_COL, last_col + 1)])
             if key is None or key in game.get("labels_seen", {}):
                 continue
             game["labels_seen"][key] = r

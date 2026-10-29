@@ -32,88 +32,20 @@ const headRow = (w, titles) => new TableRow({ tableHeader: true,
   children: titles.map((x, i) => cell(p(t(x, { b: true, pt: 9 }), { after: 0 }), { w: w[i], bg: HEAD_BG })) });
 const table = (w, rows) => new Table({ columnWidths: w, width: { size: w.reduce((a, b) => a + b), type: WidthType.DXA }, rows });
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-const status = f => f.clean ? (f.answered ? "Правки проверяющих внесены — ошибок нет" : "Ошибок нет")
-                            : (f.answered ? "Правки проверяющих внесены, остались ошибки"
-                                          : "Ответов проверяющих пока нет — ошибки в разделе дивизиона");
 
 const children = [];
 // ------------------------------------------------------------ титул
-children.push(p(t("СВОДНЫЙ ОТЧЁТ ОБ ОШИБКАХ", { pt: 20, b: true, color: ACCENT }), { align: AlignmentType.CENTER, after: 60 }));
-children.push(p(t(`Чемпионат Регулярной хоккейной лиги 3х3 · ${data.months.join(", ")}`, { pt: 12, color: MUTED }), { align: AlignmentType.CENTER, after: 40 }));
+// В отчёте только то, что нужно исправить: файлы и месяцы без ошибок, примечания
+// и общие вопросы сюда не выводятся.
+const errMonths = data.months.filter(m => data.divisions.some(d => d.others.some(o => o.month === m && o.findings.length)
+  || d.teams.length));
+children.push(p(t("ОТЧЁТ ОБ ОШИБКАХ", { pt: 20, b: true, color: ACCENT }), { align: AlignmentType.CENTER, after: 60 }));
+children.push(p(t(`Чемпионат Регулярной хоккейной лиги 3х3 · ${(errMonths.length ? errMonths : data.months).join(", ")}`,
+  { pt: 12, color: MUTED }), { align: AlignmentType.CENTER, after: 40 }));
 if (data.corrections_date)
-  children.push(p(t(`С последними правками от ${data.corrections_date}`, { pt: 12, b: true, color: ACCENT }), { align: AlignmentType.CENTER, after: 40 }));
-children.push(p(t(`Дата: ${data.date}`, { pt: 10, color: MUTED }), { align: AlignmentType.CENTER, after: 200 }));
-
-// ------------------------------------------------------------ итог по файлам
-children.push(H1("Итог по файлам"));
-const clean = data.files.filter(f => f.clean);
-if (clean.length) {
-  children.push(p(t("В этих файлах ошибок нет:", { pt: 10, b: true, color: GREEN }), { after: 60 }));
-  clean.forEach(f => children.push(p(t(`${f.file} — ${f.comp}, ${f.month}`, { pt: 10 }), { after: 30 })));
-}
-const FW0 = [3600, 5400, 2400, CONTENT_W - 11400];
-const frows = [headRow(FW0, ["Файл", "Соревнование", "Месяц", "Итог"])];
-data.files.forEach((f, i) => frows.push(new TableRow({ children: [
-  cell(p(t(f.file, { pt: 9 }), { after: 0 }), { w: FW0[0], bg: i % 2 ? ZEBRA : undefined }),
-  cell(p(t(f.comp, { pt: 9 }), { after: 0 }), { w: FW0[1], bg: i % 2 ? ZEBRA : undefined }),
-  cell(p(t(f.month, { pt: 9 }), { after: 0 }), { w: FW0[2], bg: i % 2 ? ZEBRA : undefined }),
-  cell(p(t(status(f), { pt: 9, b: true, color: f.clean ? GREEN : "B45309" }), { after: 0 }), { w: FW0[3], bg: i % 2 ? ZEBRA : undefined }),
-]})));
-children.push(p([], { after: 80 }));
-children.push(table(FW0, frows));
-
-// ------------------------------------------------------------ примечания
-children.push(H1("Примечания"));
-{
-  const done = data.divisions_all.filter(x => x.answered).map(x => x.comp);
-  const wait = data.divisions_all.filter(x => !x.answered).map(x => x.comp);
-  // месяцы, по которым ответы есть, и месяцы, по которым их ещё нет
-  const doneMonths = data.months.filter(m => data.files.some(f => f.month === m && f.answered));
-  const newMonths = data.months.filter(m => !doneMonths.includes(m));
-  const parts = [];
-  if (done.length) parts.push(`Ответы проверяющих${newMonths.length ? " за " + doneMonths.join(", ") : ""} внесены`
-    + `${data.corrections_date ? " " + data.corrections_date : ""} по: ${done.join(", ")}. `
-    + "По ним в отчёте только то, что осталось.");
-  const runs = [t("1. ", { b: true }), t(parts.join(" ") + (wait.length || newMonths.length ? " " : ""))];
-  if (wait.length) runs.push(t(`Ответов пока нет по: ${wait.join(", ")}`, { hl: true }), t(" — указаны все найденные ошибки."));
-  if (newMonths.length && done.length)
-    runs.push(t(`${cap(newMonths.join(", "))} ${newMonths.length > 1 ? "проверены" : "проверен"} впервые — указаны все найденные ошибки.`, { hl: true }));
-  children.push(p(runs, { after: 120 }));
-}
-// откуда взяты файлы, сделанные из присланных книг
-let noteNo = 2;
-const origins = Object.entries(data.origins || {});
-if (origins.length) {
-  const bySheet = {};
-  origins.forEach(([f, o]) => { (bySheet[`лист ${o.sheet}`] = bySheet[`лист ${o.sheet}`] || []).push(f); });
-  const where = Object.entries(bySheet).map(([sh, fs]) => `${fs.join(", ")} — ${sh}`).join("; ");
-  const dates = [...new Set(origins.map(([, o]) => o.received))].join(", ");
-  children.push(p([t(`${noteNo++}. Откуда взяты строки. `, { b: true }),
-    t(`Эти файлы сделаны из книг, присланных ${dates}: в каждом — копия одного листа, номера строк и столбцов `
-      + `как на этом листе. ${where}.`)], { after: 120 }));
-}
-// таблицы Составы команд есть только там, где остались ошибки в составах
-if (data.divisions.some(d => (d.teams || []).length))
-  children.push(p([t(`${noteNo++}. Ошибки в составах систематические. `, { b: true, hl: true }),
-    t("Похоже, составы команд копировались из матча в матч, поэтому одна и та же ошибка повторяется во "
-      + "всех матчах команды. Исправлять каждый матч не нужно — достаточно прислать верные составы команд "
-      + "с игровыми номерами: они приведены в разделах дивизионов в таблицах Составы команд, ошибочные "
-      + "строки выделены. Исправления во все матчи мы внесём сами.", { hl: true })], { after: 120 }));
-
-// ------------------------------------------------------------ общие вопросы
-if (data.general_questions && data.general_questions.length) {
-  children.push(H1("Вопрос ко всем дивизионам"));
-  const QW = [CONTENT_W - 5200, 5200];
-  data.general_questions.forEach(q => {
-    const rows = [headRow(QW, [q.title, "Ответ организатора"])];
-    rows.push(new TableRow({ children: [
-      cell([p(t(q.text, { pt: 10 }), { after: 80 }), p(t(q.cases, { pt: 9, color: MUTED }), { after: 80 }),
-            p(t(q.ask, { pt: 10, b: true, hl: true }), { after: 0 })], { w: QW[0] }),
-      cell(p(t("", { pt: 10 }), { after: 0 }), { w: QW[1] }),
-    ]}));
-    children.push(table(QW, rows));
-  });
-}
+  children.push(p(t(`С последними правками от ${data.corrections_date}`, { pt: 12, b: true, color: ACCENT }), { align: AlignmentType.CENTER, after: 200 }));
+children.push(p(t(data.divisions.length ? "Ниже только то, что нужно исправить. Ответ впишите в последний столбец."
+  : "Ошибок не осталось.", { pt: 11 }), { after: 120 }));
 
 // ------------------------------------------------------------ дивизионы
 const RW = [2600, 7200, CONTENT_W - 9800];
@@ -143,13 +75,11 @@ data.divisions.forEach(div => {
     children.push(table(RW, rows));
   }
   if (div.others.some(o => o.findings.length)) {
-    children.push(H2(div.teams.length ? "Другие ошибки" : "Ошибки"));
-    div.others.forEach(o => {
-      children.push(p(t(cap(o.month), { pt: 10, b: true }), { before: 120, after: 60, keepNext: true }));
-      if (!o.findings.length) {
-        children.push(p(t("Ошибок нет.", { pt: 10, i: true, color: GREEN })));
-        return;
-      }
+    if (div.teams.length) children.push(H2("Другие ошибки"));
+    div.others.filter(o => o.findings.length).forEach(o => {
+      const origin = (data.origins || {})[o.file];
+      children.push(p(t(cap(o.month) + (origin ? ` · лист ${origin.sheet}` : ""), { pt: 10, b: true }),
+        { before: 120, after: 60, keepNext: true }));
       const rows = [headRow(FW, ["Стр.", "Матч", "Счёт", "Что не так", "Как исправляем"])];
       o.findings.forEach((f, i) => {
         const bg = i % 2 ? ZEBRA : undefined;
