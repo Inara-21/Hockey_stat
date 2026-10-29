@@ -54,6 +54,19 @@ def last_col(ws):
     return max(ws.max_column, 8)
 
 
+def shown(v):
+    """Значение ячейки так, как его видно в Excel: время и длительность — часами и минутами."""
+    if isinstance(v, datetime.timedelta):
+        sec = int(v.total_seconds())
+        return f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
+    if isinstance(v, datetime.time):
+        return v.strftime("%H:%M")
+    if isinstance(v, float) and 0 <= v < 1:
+        m = round(v * 24 * 60)
+        return f"{m // 60:02d}:{m % 60:02d} (Excel записал счёт как время)"
+    return v
+
+
 def write_fixes(wb, applied):
     """Вносит применённые правки в ячейки книги."""
     for a in applied:
@@ -79,7 +92,7 @@ def write_fixes(wb, applied):
             c = ws.cell(fr, FIRST_COL)
             was = c.value
             c.value = fx["final"]
-            note(c, f"{why}\nБыло: {was}", FIXED)
+            note(c, f"{why}\nБыло: {shown(was)}", FIXED)
         if "periods" in fx:
             for i in range(FIRST_COL, last_col(ws) + 1):
                 c = ws.cell(pr, i)
@@ -88,7 +101,7 @@ def write_fixes(wb, applied):
                 if norm(c.value) != (new or ""):
                     was = c.value
                     c.value = new
-                    note(c, f"{why}\nБыло: {was if was not in (None, '') else 'пусто'}", FIXED)
+                    note(c, f"{why}\nБыло: {shown(was) if was not in (None, '') else 'пусто'}", FIXED)
         if "judge" in fx:
             c = ws.cell(g["labels_seen"]["judge"] + 1, FIRST_COL)
             was = c.value
