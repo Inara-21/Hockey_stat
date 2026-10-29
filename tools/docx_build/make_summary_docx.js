@@ -96,38 +96,6 @@ data.divisions.forEach(div => {
   }
 });
 
-// ------------------------------------------------------------ количество игр
-children.push(H1("Сверка количества игр", { pageBreak: true }));
-children.push(p(t("Просим сверить количество игр по каждому дивизиону за каждый месяц и общую сумму, "
-  + "чтобы убедиться, что ни одна игра не потеряна.", { pt: 10 }), { after: 120 }));
-const first = 5200, last = 2600;
-const mid = Math.floor((CONTENT_W - first - last) / (data.months.length + 1));
-const GW = [first, ...data.months.map(() => mid), CONTENT_W - first - last - mid * data.months.length, last];
-const num = (v, o = {}) => p(t(String(v), { pt: 10, ...o }), { align: AlignmentType.RIGHT, after: 0 });
-const grows = [headRow(GW, ["Соревнование", ...data.months.map(cap), "Всего", "Сходится?"])];
-// «Сходится?» — выделяем, как в присланном отчёте
-grows[0] = new TableRow({ tableHeader: true, children: ["Соревнование", ...data.months.map(cap), "Всего", "Сходится?"].map((x, i) =>
-  cell(p(t(x, { b: true, pt: 9, hl: x === "Сходится?" }), { after: 0 }), { w: GW[i], bg: HEAD_BG })) });
-data.games_table.forEach((r, i) => {
-  const bg = i % 2 ? ZEBRA : undefined;
-  grows.push(new TableRow({ children: [
-    cell(p(t(r.comp, { pt: 10 }), { after: 0 }), { w: GW[0], bg }),
-    ...data.months.map((m, j) => cell(num(r.cells[m] || "—"), { w: GW[j + 1], bg })),
-    cell(num(r.total, { b: true }), { w: GW[GW.length - 2], bg }),
-    cell(p(t("", { pt: 10 }), { after: 0 }), { w: GW[GW.length - 1] }),
-  ]}));
-});
-grows.push(new TableRow({ children: [
-  cell(p(t("Итого", { pt: 10, b: true }), { after: 0 }), { w: GW[0], bg: HEAD_BG }),
-  ...data.months.map((m, j) => cell(num(data.games_total[m], { b: true }), { w: GW[j + 1], bg: HEAD_BG })),
-  cell(num(data.games_grand, { b: true }), { w: GW[GW.length - 2], bg: HEAD_BG }),
-  cell(p(t("", { pt: 10 }), { after: 0 }), { w: GW[GW.length - 1], bg: HEAD_BG }),
-]}));
-children.push(table(GW, grows));
-if (data.misplaced_total)
-  children.push(p(t(`В итог не включены матчи под вопросом: ${data.misplaced_total} — см. раздел Конференция ЗАПАД (2 Дивизион).`,
-    { pt: 9, color: MUTED }), { before: 80 }));
-
 // ------------------------------------------------------------ недостающие месяцы
 if (data.missing.length) {
   children.push(new Paragraph({ children: [t("Ждём данные", { pt: 15, b: true, color: ACCENT, hl: true })],
