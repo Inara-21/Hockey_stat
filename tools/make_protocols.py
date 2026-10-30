@@ -64,7 +64,8 @@ def css_extra(z=None):
 .head .division { text-align:center; font-weight:700; font-size:%(head)spt; letter-spacing:.4px; margin:0 0 5mm 0; }
 .head .title, .head .date { font-size:%(head)spt; }
 body { font-size:%(data)spt; }
-.lb, .mark { font-size:%(label)spt; }
+.lb { font-size:%(label)spt; }
+.mark { font-size:%(big)spt; font-weight:700; }   /* Б — как счёт, жирным */
 .card { padding:3mm 2.5mm; break-inside:avoid; }
 .fld.wide { margin-bottom:1.6mm; }
 .row2 { margin-bottom:1.2mm; gap:3mm; }
@@ -100,19 +101,18 @@ def shootout_period(g):
 
 
 def periods_list(g):
-    """Периоды для протокола — всегда четыре, чтобы во всех матчах было одинаково.
-    Четвёртый период — буллиты: 1:0 или 0:1, как в сентябрьских книгах. В июле и августе
-    у матчей по буллитам есть только пометка Б Буллиты: четвёртый период равен разнице
-    итога и суммы трёх периодов (после трёх периодов ничья). Без буллитов — 0:0."""
+    """Периоды для протокола. У матча по буллитам — четвёртый период, счёт буллитов:
+    1:0 или 0:1, как в сентябрьских книгах. В июле и августе у таких матчей есть только
+    пометка Б Буллиты: четвёртый период равен разнице итога и суммы трёх периодов (после
+    трёх периодов ничья). Без буллитов — три периода."""
     per = list(g["periods_raw"])
-    if len(per) == 3:
+    if len(per) == 3 and g["shootout"]:
         sc = [parse_score(p) for p in per]
-        d = (0, 0)
-        if g["shootout"] and all(x[0] is not None for x in sc) and g["goals1"] is not None:
+        if all(x[0] is not None for x in sc) and g["goals1"] is not None:
             s1, s2 = sum(x[0] for x in sc), sum(x[1] for x in sc)
-            if s1 == s2 and (g["goals1"] - s1, g["goals2"] - s2) in ((1, 0), (0, 1)):
-                d = (g["goals1"] - s1, g["goals2"] - s2)
-        per.append(f"{d[0]}:{d[1]}")
+            d = (g["goals1"] - s1, g["goals2"] - s2)
+            if s1 == s2 and d in ((1, 0), (0, 1)):
+                per.append(f"{d[0]}:{d[1]}")
     return per
 
 
