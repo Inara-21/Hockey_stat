@@ -41,7 +41,7 @@ SIZES = {
     "head": 11,      # дивизион, ПРОТОКОЛ ИГРОВОГО ДНЯ, дата в шапке
     "label": 6.3,    # подписи полей
     "data": 7.7,     # данные в карточке
-    "big": 9.7,      # итоговый счёт, победитель
+    "big": 7.7,      # итоговый счёт, победитель — как названия команд (данные), жирным
     "th": 6.3,       # шапка таблицы состава
     "sur": 7.2,      # фамилия и номер игрока
     "io": 6.6,       # имя и отчество игрока
@@ -65,7 +65,7 @@ def css_extra(z=None):
 .head .title, .head .date { font-size:%(head)spt; }
 body { font-size:%(data)spt; }
 .lb, .mark { font-size:%(label)spt; }
-.card { padding:3mm 3mm; break-inside:avoid; }
+.card { padding:3mm 2.5mm; break-inside:avoid; }
 .fld.wide { margin-bottom:1.6mm; }
 .row2 { margin-bottom:1.2mm; gap:3mm; }
 .rosters { margin:1.6mm 0; gap:2.5mm; }
@@ -84,9 +84,10 @@ body, .lb, table.ros th, .head .league, .head .title, .head .date { color:#000; 
 .vl.team { font-weight:700; white-space:nowrap; }   /* названия команд — жирным, без переноса по дефису */
 .sur { font-weight:400; }       /* фамилии игроков — обычным */
 .vl.big { font-weight:700; font-size:%(big)spt; white-space:nowrap; }   /* итоговый счёт и победитель */
-/* строка результата: победитель — по ширине названия, счёт — остальное; БУЛЛИТЫ при нехватке места — под счётом */
-.row2.res { grid-template-columns:minmax(0,1fr) max-content; }
-.fld.score { flex-wrap:wrap; }
+/* строка результата: победитель — по ширине названия, счёт с пометкой Б (буллиты) — остальное */
+.row2.res { grid-template-columns:minmax(0,1fr) max-content; gap:1.5mm; }
+.mark { margin-left:3px; letter-spacing:0; }
+.fld.score { white-space:nowrap; }
 """ % z
 
 
@@ -98,11 +99,25 @@ def shootout_period(g):
     return sum(x[0] for x in per[:3]) == sum(x[1] for x in per[:3])
 
 
+def periods_list(g):
+    """Периоды для протокола — всегда четыре, чтобы во всех матчах было одинаково.
+    Четвёртый период — буллиты: 1:0 или 0:1, как в сентябрьских книгах. В июле и августе
+    у матчей по буллитам есть только пометка Б Буллиты: четвёртый период равен разнице
+    итога и суммы трёх периодов (после трёх периодов ничья). Без буллитов — 0:0."""
+    per = list(g["periods_raw"])
+    if len(per) == 3:
+        sc = [parse_score(p) for p in per]
+        d = (0, 0)
+        if g["shootout"] and all(x[0] is not None for x in sc) and g["goals1"] is not None:
+            s1, s2 = sum(x[0] for x in sc), sum(x[1] for x in sc)
+            if s1 == s2 and (g["goals1"] - s1, g["goals2"] - s2) in ((1, 0), (0, 1)):
+                d = (g["goals1"] - s1, g["goals2"] - s2)
+        per.append(f"{d[0]}:{d[1]}")
+    return per
+
+
 def periods_text(g):
-    """Счёт по периодам для протокола: буллиты четвёртым периодом выводятся отдельно."""
-    if shootout_period(g):
-        return ", ".join(score_text(p) for p in g["periods_raw"][:3]) + "; буллиты " + score_text(g["periods_raw"][3])
-    return ", ".join(score_text(p) for p in g["periods_raw"])
+    return ", ".join(score_text(p) for p in periods_list(g))
 
 
 def player_parts(name):
@@ -128,7 +143,7 @@ def roster_table(roster, slots):
 
 
 def card_html(g, slots):
-    mark = '<span class="mark">БУЛЛИТЫ</span>' if g["shootout"] or shootout_period(g) else ""
+    mark = '<span class="mark">Б</span>' if g["shootout"] or shootout_period(g) else ""   # Б — победа по буллитам
     return f'''<div class="card">
   <div class="fld wide"><span class="lb">СОРЕВНОВАНИЕ</span><span class="vl">{e(g["comp"])}</span></div>
   <div class="row2">
