@@ -93,6 +93,13 @@ table.ros td.num { text-align:right; padding-right:3px; }   /* номер — у
 /* строка результата: победитель — по ширине названия, счёт с пометкой Б (буллиты) — остальное */
 .row2.res { grid-template-columns:minmax(0,1fr) max-content; gap:1.5mm; }
 .fld.score { white-space:nowrap; }
+/* рамка карточки — чёрная; тонкие линии и фон шапки таблицы — нейтральный серый, без синевы */
+.card { border-color:#000; }
+.fld { border-bottom-color:#9a9a9a; }
+table.ros th, table.ros td { border-color:#9a9a9a; }
+table.ros th { background:#eeeeee; }
+/* подпись поля отделена от значения заметнее, чем слова подписи друг от друга */
+.fld { gap:2.5mm; }
 """ % z
 
 
