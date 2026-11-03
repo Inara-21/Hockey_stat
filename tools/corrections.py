@@ -218,7 +218,7 @@ def apply(fname, games):
         # значение (например, это исправленная копия), это не расхождение.
         done_final = "final" not in fx or parse_score(fx["final"]) == (g["goals1"], g["goals2"])
         done_periods = "periods" not in fx or _scores(fx["periods"]) == _scores(g["periods_raw"])
-        done_shoot = not fx.get("shootout") or g["shootout"]
+        done_shoot = "shootout" not in fx or bool(fx["shootout"]) == g["shootout"]
         if done_final and done_periods and done_shoot:
             already.append(dict(fix=fx, game=g))
             continue
@@ -239,6 +239,10 @@ def apply(fname, games):
         if fx.get("shootout") and not g["shootout"]:
             g["final_notes"] = list(g["final_notes"]) + [SHOOTOUT_NOTE]
             g["shootout"] = True
+        if "shootout" in fx and not fx["shootout"] and g["shootout"]:
+            # пометка «Б Буллиты» стоит ошибочно — снимаем её
+            g["final_notes"] = [n for n in g["final_notes"] if "буллит" not in n.lower()]
+            g["shootout"] = False
         applied.append(dict(fix=fx, game=g, before=before, after=describe(g)))
     # Матчи, перенесённые сюда из другого файла, — в конец, в заранее назначенные строки.
     for fx in incoming:

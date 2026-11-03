@@ -142,7 +142,7 @@ def main():
         for a in corr["applied"]:
             if a["fix"].get("team_roster"):
                 continue                      # составы пишутся ниже, на готовый лист
-            extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_final",
+            extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_shootout", "was_final",
                                      "was_periods", "judge", "was_judge", "note", "source",
                                      "label", "label_row", "was_label", "date", "was_date",
                                      "time", "was_time"}

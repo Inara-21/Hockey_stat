@@ -23,3 +23,4 @@ data/site_cache/
 
 # Протоколы игровых дней (PDF) — собираются заново: python3 tools/make_protocols.py
 reports/protokoly/
+reports/Протоколы_игровых_дней_*.zip

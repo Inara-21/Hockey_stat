@@ -127,6 +127,16 @@ def write_fixes(wb, applied):
                 c.font = copy.copy(sample.font)
                 c.alignment = copy.copy(sample.alignment)
             note(c, f"{why}\nБыло: пометки не было", FIXED)
+        if "shootout" in fx and not fx["shootout"]:
+            # ошибочная пометка «Б Буллиты» справа от итога — убираем
+            cells = [ws.cell(fr, i) for i in range(FIRST_COL + 1, last_col(ws) + 1)
+                     if "буллит" in norm(ws.cell(fr, i).value).lower()]
+            if not cells:
+                raise RuntimeError(f"{g['sheet']} стр. {fr}: пометки Б Буллиты нет")
+            for c in cells:
+                was = c.value
+                c.value = None
+                note(c, f"{why}\nБыло: {was}", FIXED)
 
 
 def template_note(ws):
