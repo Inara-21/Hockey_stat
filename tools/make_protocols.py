@@ -45,8 +45,9 @@ SIZES = {
 # Liberation Sans: настоящие курсив и жирный курсив, буква «ы» — цельная. В DejaVu Sans
 # курсива нет, браузер наклоняет буквы сам, и составная «ы» при печати разъезжается.
 FONT = "'Liberation Sans', Arial, sans-serif"
-# Поля страницы, мм: сверху, по бокам, снизу. Боковые поля 10 мм — шире колонка ФИО.
-MARGIN_TOP, MARGIN_SIDE, MARGIN_BOTTOM = 21, 10, 14
+# Поля страницы, мм: сверху, по бокам, снизу. Боковые поля 9 мм и ещё 1 мм отступа внутри листа:
+# всё содержимое на 1 мм от края печатной области, иначе край курсива и правая рамка срезаются.
+MARGIN_TOP, MARGIN_SIDE, MARGIN_BOTTOM = 21, 9, 14
 CONTENT_W_PX = round((210 - 2 * MARGIN_SIDE) / 25.4 * 96)   # ширина печатной полосы в точках браузера
 
 
@@ -58,9 +59,10 @@ def css_extra(z=None):
 body { font-family:%(font)s; color:#000; }
 body * { color:#000 !important; }   /* весь текст — чёрный (в старых стилях у заголовков и подписей свой цвет) */
 .sheet { padding-top:1.5mm; }   /* без отступа значок над Й в заголовке печатается внизу предыдущей страницы */
+.sheet { padding-left:1mm; padding-right:1mm; }   /* от края печатной области: не срезаются курсив и рамки */
 /* лист — ровно страница A4 без полей, номер листа — в правом нижнем углу */
 .sheet { position:relative; height:%(sheet_h)smm; }
-.foot { position:absolute; right:0; bottom:0; font-size:%(head)spt; font-weight:400; }
+.foot { position:absolute; right:1mm; bottom:0; font-size:%(head)spt; font-weight:400; }
 .grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:4mm 4mm; }
 .head { margin-bottom:8mm; }
 .head .top { display:grid; grid-template-columns:16mm 1fr 16mm; align-items:center; margin-bottom:5mm; }
