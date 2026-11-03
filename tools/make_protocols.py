@@ -33,61 +33,63 @@ SRC = os.path.join(ROOT, "data", "source")
 OUT = os.path.join(ROOT, "reports", "protokoly")
 CONF = {"vostok": "ВОСТОК", "zapad": "ЗАПАД", "centr": "ЦЕНТР"}
 
-# Размеры шрифтов, пт. Подобраны максимальными, при которых на данных всех дивизионов
-# всё помещается: ни одна строка не шире карточки (имя и отчество — в одну строку),
-# лист с четырьмя карточками — на одной странице. Проверка: tools/fit_protocol_sizes.py
+# Размеры шрифтов, пт — не больше трёх: название чемпионата, шапка листа, всё в карточках.
+# Размер карточек — максимальный, при котором на данных всех дивизионов всё помещается:
+# ни одна строка не шире карточки, фамилия — первой строкой, имя и отчество — второй,
+# лист с четырьмя карточками — на одной странице. Подбор: tools/fit_protocol_sizes.py
 SIZES = {
     "champ": 13,     # название чемпионата
-    "head": 11,      # дивизион, ПРОТОКОЛ ИГРОВОГО ДНЯ, дата в шапке
-    "label": 6.3,    # подписи полей
-    "data": 7.7,     # данные в карточке
-    "big": 7.7,      # итоговый счёт, победитель — как названия команд (данные), жирным
-    "th": 6.3,       # шапка таблицы состава
-    "sur": 7.2,      # фамилия и номер игрока
-    "io": 6.6,       # имя и отчество игрока
-    "foot": 10,      # номер листа
+    "head": 11,      # дивизион, ПРОТОКОЛ ИГРОВОГО ДНЯ, дата, номер листа
+    "card": 7.8,     # всё в карточках: подписи, данные, команды, счёт, игроки, судья, секретарь
 }
+# Liberation Sans: настоящие курсив и жирный курсив, буква «ы» — цельная. В DejaVu Sans
+# курсива нет, браузер наклоняет буквы сам, и составная «ы» при печати разъезжается.
+FONT = "'Liberation Sans', Arial, sans-serif"
+# Поля страницы, мм: сверху, по бокам, снизу. Боковые поля 10 мм — шире колонка ФИО.
+MARGIN_TOP, MARGIN_SIDE, MARGIN_BOTTOM = 21, 10, 14
+CONTENT_W_PX = round((210 - 2 * MARGIN_SIDE) / 25.4 * 96)   # ширина печатной полосы в точках браузера
 
 
 def css_extra(z=None):
-    z = dict(SIZES, **(z or {}))
+    z = dict(SIZES, **(z or {}), font=FONT, mt=MARGIN_TOP, ms=MARGIN_SIDE, mb=MARGIN_BOTTOM,
+             sheet_h=297 - MARGIN_TOP - MARGIN_BOTTOM - 1)
     return """
+@page { size:A4; margin:%(mt)smm %(ms)smm %(mb)smm %(ms)smm; }
+body { font-family:%(font)s; color:#000; }
+body * { color:#000 !important; }   /* весь текст — чёрный (в старых стилях у заголовков и подписей свой цвет) */
 .sheet { padding-top:1.5mm; }   /* без отступа значок над Й в заголовке печатается внизу предыдущей страницы */
-/* лист — ровно страница (A4 без полей: 297 − 21 − 14 = 262 мм), номер листа — в правом нижнем углу */
-.sheet { position:relative; height:261mm; }
-.foot { position:absolute; right:0; bottom:0; font-size:%(foot)spt; font-weight:400; color:#000; }
-.grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:4mm 5mm; }
+/* лист — ровно страница A4 без полей, номер листа — в правом нижнем углу */
+.sheet { position:relative; height:%(sheet_h)smm; }
+.foot { position:absolute; right:0; bottom:0; font-size:%(head)spt; font-weight:400; }
+.grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:4mm 4mm; }
 .head { margin-bottom:8mm; }
 .head .top { display:grid; grid-template-columns:16mm 1fr 16mm; align-items:center; margin-bottom:5mm; }
 .head .top img.logo { height:13mm; width:auto; display:block; }
 .head .league { margin:0; text-transform:none; font-size:%(champ)spt; white-space:nowrap; }
 .head .division { text-align:center; font-weight:700; font-size:%(head)spt; letter-spacing:.4px; margin:0 0 5mm 0; }
-.head .title, .head .date { font-size:%(head)spt; }
-body { font-size:%(data)spt; }
-.lb { font-size:%(label)spt; }
-.mark { font-size:%(big)spt; font-weight:700; }   /* Б — как счёт, жирным */
-.card { padding:3mm 2.5mm; break-inside:avoid; }
+.head .title { font-size:%(head)spt; }
+.head .date { font-size:%(head)spt; font-weight:400; }   /* дата — не жирным */
+body, .lb, .mark, .vl, .vl.big, table.ros th, table.ros td, .io { font-size:%(card)spt; }
+.card { padding:3mm 2mm; break-inside:avoid; }
 .fld.wide { margin-bottom:1.6mm; }
 .row2 { margin-bottom:1.2mm; gap:3mm; }
-.rosters { margin:1.6mm 0; gap:2.5mm; }
+.rosters { margin:1.6mm 0; gap:2mm; }
 .fld.wide2 { margin-top:1mm; }
 .fld.off { margin-top:0.8mm; }
 .nowrap { white-space:nowrap; }
-table.ros th { font-size:%(th)spt; }
-table.ros td { font-size:%(sur)spt; vertical-align:top; padding:1px 2px; line-height:1.12; }
+table.ros td { vertical-align:top; padding:1px 3px; line-height:1.12; }
 table.ros td.num, table.ros th.num { width:5mm; }
-table.ros td.num { vertical-align:middle; text-align:right; padding-right:2px; }
-.io { font-size:%(io)spt; }
-.sur { white-space:nowrap; }   /* фамилия — одна строка; отчество в редких случаях переносится на третью */
-/* статичная информация — чёрным прямым шрифтом, заполняемая — синим курсивом */
-body, .lb, table.ros th, .head .league, .head .title, .head .date { color:#000; font-style:normal; }
-.vl, table.ros td, .mark, .head .division, .head .date .dt { color:#1a3a86; font-style:italic; }
+table.ros td.num { text-align:right; padding-right:3px; }   /* номер — у верхнего края, отступ справа как у ФИО слева */
+.sur, .io { white-space:nowrap; }   /* фамилия — первой строкой, имя и отчество — второй, без переноса */
+/* подписи — прямым шрифтом, данные — курсивом; весь текст чёрный */
+.lb, table.ros th, .head .league, .head .title, .head .date { font-style:normal; }
+.vl, table.ros td, .mark, .head .division, .head .date .dt { font-style:italic; }
 .vl.team { font-weight:700; white-space:nowrap; }   /* названия команд — жирным, без переноса по дефису */
 .sur { font-weight:400; }       /* фамилии игроков — обычным */
-.vl.big { font-weight:700; font-size:%(big)spt; white-space:nowrap; }   /* итоговый счёт и победитель */
+.vl.big { font-weight:700; white-space:nowrap; }   /* итоговый счёт и победитель — жирным */
+.mark { font-weight:700; margin-left:3px; letter-spacing:0; }   /* Б — как счёт, жирным */
 /* строка результата: победитель — по ширине названия, счёт с пометкой Б (буллиты) — остальное */
 .row2.res { grid-template-columns:minmax(0,1fr) max-content; gap:1.5mm; }
-.mark { margin-left:3px; letter-spacing:0; }
 .fld.score { white-space:nowrap; }
 """ % z
 
@@ -216,10 +218,10 @@ window.addEventListener('load', () => {
 
 
 def measure_layout(page_html, tmp):
-    """Вёрстка в браузере шириной в печатную полосу (182 мм): что не помещается."""
+    """Вёрстка в браузере шириной в печатную полосу: что не помещается."""
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(page_html.replace("</body>", MEASURE + "</body>"))
-    dom = subprocess.run([CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--window-size=688,1200",
+    dom = subprocess.run([CHROME, "--headless", "--no-sandbox", "--disable-gpu", f"--window-size={CONTENT_W_PX},1200",
                           "--virtual-time-budget=5000", "--dump-dom", f"file://{tmp}"],
                          capture_output=True, text=True).stdout
     m = re.search(r'<pre id="measure">(.*?)</pre>', dom, re.S)

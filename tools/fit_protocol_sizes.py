@@ -2,8 +2,7 @@
 """Подбор размеров шрифтов протоколов: максимальные, при которых на данных всех
 дивизионов всё помещается (замер вёрстки в браузере, как перед печатью).
 
-Размеры в карточке (подписи, данные, счёт, шапка таблицы, фамилия, имя и отчество)
-увеличиваются вместе, в одной пропорции к tools/make_protocols.py:SIZES.
+Проверяется размер шрифта карточек (SIZES["card"]): множитель к нему.
 
 Запуск:  python3 tools/fit_protocol_sizes.py 1.0 1.1 1.2      проверить множители
 """
@@ -15,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_protocols as mp
 
-CARD = ("label", "data", "big", "th", "sur", "io")
+CARD = ("card",)
 
 
 def problems_for(k):
