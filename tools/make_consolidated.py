@@ -123,7 +123,9 @@ def write_rosters(ws, applied):
                 raise RuntimeError(f"{ws.title} стр. {r}: нет ячейки «{was} №{num}»")
             old = c.value
             c.value = f"{now} №{num}"
-            note(c, f"Исправлено по ответу проверяющего ({fx.get('note', '')}).\nБыло: {old}", FIXED)
+            who = ("по решению исполнителя" if fx.get("source", "").startswith("Решение исполнителя")
+                   else "по ответу проверяющего")
+            note(c, f"Исправлено {who} ({fx.get('note', '')}).\nБыло: {old}", FIXED)
 
 
 def main():
@@ -140,7 +142,7 @@ def main():
         if corr["conflicts"]:
             raise RuntimeError(f"{fname}: правки не сходятся с файлом: {corr['conflicts']}")
         for a in corr["applied"]:
-            if a["fix"].get("team_roster"):
+            if a["fix"].get("team_roster") or a["fix"].get("rename_player"):
                 continue                      # составы пишутся ниже, на готовый лист
             extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_shootout", "was_final",
                                      "was_periods", "judge", "was_judge", "note", "source",
@@ -190,7 +192,8 @@ def main():
                            f"({fx.get('note', '')}).\nБыло: {was}", FIXED)
         else:
             copy_sheet(ws, dst)
-        write_rosters(dst, [a for a in corr["applied"] if a["fix"].get("team_roster")])
+        write_rosters(dst, [a for a in corr["applied"]
+                            if a["fix"].get("team_roster") or a["fix"].get("rename_player")])
         normalize_times(dst)
         n_games = len(read_sheet(dst))
         n_fixed = sum(1 for row in dst.iter_rows() for c in row

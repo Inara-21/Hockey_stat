@@ -91,7 +91,7 @@ def apply(fname, games):
                            open_questions=[], moved_out=[], moved_in=[])
     by_row = {g["row"]: g for g in games}
     applied, conflicts, drop, misplaced, already, questions, answers, open_q = [], [], set(), [], [], {}, [], []
-    moved_out, moved_in, team_rosters = [], [], []
+    moved_out, moved_in, team_rosters, renames = [], [], [], []
     for fx in mine:
         if fx.get("superseded"):
             # правка закрыта: например, проверяющий прислал исправленный файл
@@ -105,6 +105,9 @@ def apply(fname, games):
             continue
         if fx.get("team_roster"):
             team_rosters.append(fx)          # после переноса матчей: им тоже нужна правка
+            continue
+        if fx.get("rename_player"):
+            renames.append(fx)               # написание ФИО игрока — во всех матчах файла
             continue
         g = by_row.get(fx["row"])
         if fx.get("move_to"):
@@ -289,6 +292,27 @@ def apply(fname, games):
                     applied.append(dict(fix=fx, game=g, side=key, swaps=swaps,
                                         before=f"{team}: " + ", ".join(f"№{a[0]} {a[1]}" for a, _ in swaps),
                                         after=f"{team}: " + ", ".join(f"№{b[0]} {b[1]}" for _, b in swaps)))
+
+    for fx in renames:
+        # Опечатка в ФИО игрока: во всех матчах файла прежнее написание меняется
+        # на верное, номер остаётся. Если прежнего написания нет нигде, а верное
+        # есть — правка уже стоит в файле; если нет ни того ни другого — расхождение.
+        was, now, seen = fx["was_player"], fx["player"], False
+        for g in games:
+            for key in ("roster1", "roster2"):
+                hits = [i for i, (n, nm) in enumerate(g[key]) if nm == was]
+                seen = seen or any(nm == now for _, nm in g[key])
+                for i in hits:
+                    n = g[key][i][0]
+                    g[key][i] = (n, now)
+                    team = g["team1"] if key == "roster1" else g["team2"]
+                    applied.append(dict(fix=fx, game=g, side=key, swaps=[((n, was), (n, now))],
+                                        before=f"{team}: №{n} {was}", after=f"{team}: №{n} {now}"))
+                    seen = True
+        if not seen:
+            conflicts.append(dict(fix=fx, game=None, why=f"в файле нет игрока {was}"))
+        elif not any(a["fix"] is fx for a in applied):
+            already.append(dict(fix=fx, game=None))
 
     kept = [g for g in games if g["row"] not in drop]
     return kept, dict(applied=applied, conflicts=conflicts, misplaced=misplaced, already=already,

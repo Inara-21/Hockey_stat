@@ -68,6 +68,7 @@ def main(files=None, out=OUT, title=None, note=None):
     n_files = 0
 
     applied = defaultdict(lambda: defaultdict(list))
+    renamed = set()
     for path in files:
         games, problems, s = collect(path)
         team_fixes = defaultdict(list)
@@ -76,6 +77,16 @@ def main(files=None, out=OUT, title=None, note=None):
             if a["fix"].get("team_roster"):
                 # состав команды меняется во всех её матчах — одна строка на команду
                 team_fixes[(g["comp"], g["date"].year, g["date"].month, a["fix"]["team"])].append(a)
+                continue
+            if a["fix"].get("rename_player"):
+                # написание ФИО игрока — одна строка на файл
+                fx = a["fix"]
+                key = (g["comp"], g["date"].year, g["date"].month)
+                if (fx["file"], fx["player"]) not in renamed:
+                    renamed.add((fx["file"], fx["player"]))
+                    applied[key[0]][key[1:]].append(dict(
+                        row="все", match=f"все матчи с игроком {fx['player']}",
+                        before=fx["was_player"], after=fx["player"], note=fx.get("note", "")))
                 continue
             d = g["date"].strftime("%d.%m.%Y") if g["date"] else "—"
             applied[g["comp"]][(g["date"].year, g["date"].month)].append(dict(
