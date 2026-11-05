@@ -91,7 +91,7 @@ def apply(fname, games):
                            open_questions=[], moved_out=[], moved_in=[])
     by_row = {g["row"]: g for g in games}
     applied, conflicts, drop, misplaced, already, questions, answers, open_q = [], [], set(), [], [], {}, [], []
-    moved_out, moved_in, team_rosters, renames = [], [], [], []
+    moved_out, moved_in, team_rosters, renames, team_renames = [], [], [], [], []
     for fx in mine:
         if fx.get("superseded"):
             # правка закрыта: например, проверяющий прислал исправленный файл
@@ -108,6 +108,9 @@ def apply(fname, games):
             continue
         if fx.get("rename_player"):
             renames.append(fx)               # написание ФИО игрока — во всех матчах файла
+            continue
+        if fx.get("rename_team"):
+            team_renames.append(fx)          # название команды — во всех матчах файла
             continue
         g = by_row.get(fx["row"])
         if fx.get("move_to"):
@@ -267,6 +270,24 @@ def apply(fname, games):
         g["moved_from"] = (fx["file"], fx["row"])
         games = games + [g]
         moved_in.append(dict(fix=fx, game=g, origin=origin))
+
+    for fx in team_renames:
+        # Название команды записано не так, как в других месяцах и на сайте:
+        # во всех матчах файла прежнее название меняется на верное.
+        was, now, seen = fx["was_team_name"], fx["team_name"], False
+        for g in games:
+            for key in ("team1", "team2"):
+                if g[key] == was:
+                    g[key] = now
+                    applied.append(dict(fix=fx, game=g, side=key,
+                                        before=f"команда {was}", after=f"команда {now}"))
+                    seen = True
+                elif g[key] == now:
+                    seen = True
+        if not seen:
+            conflicts.append(dict(fix=fx, game=None, why=f"в файле нет команды {was}"))
+        elif not any(a["fix"] is fx for a in applied):
+            already.append(dict(fix=fx, game=None))
 
     for fx in team_rosters:
         # Верный состав команды от проверяющего: во всех матчах команды в файле

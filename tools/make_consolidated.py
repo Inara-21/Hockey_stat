@@ -128,6 +128,20 @@ def write_rosters(ws, applied):
             note(c, f"Исправлено {who} ({fx.get('note', '')}).\nБыло: {old}", FIXED)
 
 
+def write_team_names(ws, applied):
+    """Верное название команды: ячейка «Команда 1/2» в каждом матче, где оно было другим."""
+    for a in applied:
+        g, fx = a["game"], a["fix"]
+        c = ws.cell(g["labels_seen"][a["side"]], FIRST_COL)
+        if norm(c.value) != fx["was_team_name"]:
+            raise RuntimeError(f"{ws.title}!{c.coordinate}: там не «{fx['was_team_name']}», а «{c.value}»")
+        old = c.value
+        c.value = fx["team_name"]
+        who = ("по решению исполнителя" if fx.get("source", "").startswith("Решение исполнителя")
+               else "по ответу проверяющего")
+        note(c, f"Исправлено {who} ({fx.get('note', '')}).\nБыло: {old}", FIXED)
+
+
 def main():
     out = openpyxl.Workbook()
     summary = out.active
@@ -142,8 +156,8 @@ def main():
         if corr["conflicts"]:
             raise RuntimeError(f"{fname}: правки не сходятся с файлом: {corr['conflicts']}")
         for a in corr["applied"]:
-            if a["fix"].get("team_roster") or a["fix"].get("rename_player"):
-                continue                      # составы пишутся ниже, на готовый лист
+            if a["fix"].get("team_roster") or a["fix"].get("rename_player") or a["fix"].get("rename_team"):
+                continue                      # составы и названия команд пишутся ниже, на готовый лист
             extra = set(a["fix"]) - {"file", "row", "final", "periods", "shootout", "was_shootout", "was_final",
                                      "was_periods", "judge", "was_judge", "note", "source",
                                      "label", "label_row", "was_label", "date", "was_date",
@@ -194,6 +208,7 @@ def main():
             copy_sheet(ws, dst)
         write_rosters(dst, [a for a in corr["applied"]
                             if a["fix"].get("team_roster") or a["fix"].get("rename_player")])
+        write_team_names(dst, [a for a in corr["applied"] if a["fix"].get("rename_team")])
         normalize_times(dst)
         n_games = len(read_sheet(dst))
         n_fixed = sum(1 for row in dst.iter_rows() for c in row

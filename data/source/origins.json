@@ -30,6 +30,18 @@
    "sheet": "сентябрь",
    "received": "28.10.2026",
    "folder": "data/incoming/2026-10-28"
+  },
+  "2026-09_centr_div2.xlsx": {
+   "file": "centr_div2_sentyabr_2026.xlsx",
+   "sheet": "Сентябрь 2026",
+   "received": "05.11.2026",
+   "folder": "data/incoming/2026-11-05"
+  },
+  "2026-09_centr_div3.xlsx": {
+   "file": "centr_div3_sentyabr_2026.xlsx",
+   "sheet": "Сентябрь 2026",
+   "received": "05.11.2026",
+   "folder": "data/incoming/2026-11-05"
   }
  }
 }

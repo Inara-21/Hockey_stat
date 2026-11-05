@@ -78,15 +78,17 @@ def main(files=None, out=OUT, title=None, note=None):
                 # состав команды меняется во всех её матчах — одна строка на команду
                 team_fixes[(g["comp"], g["date"].year, g["date"].month, a["fix"]["team"])].append(a)
                 continue
-            if a["fix"].get("rename_player"):
-                # написание ФИО игрока — одна строка на файл
+            if a["fix"].get("rename_player") or a["fix"].get("rename_team"):
+                # написание ФИО игрока или название команды — одна строка на файл
                 fx = a["fix"]
                 key = (g["comp"], g["date"].year, g["date"].month)
-                if (fx["file"], fx["player"]) not in renamed:
-                    renamed.add((fx["file"], fx["player"]))
+                was, now, who = ((fx["was_player"], fx["player"], "с игроком") if fx.get("rename_player")
+                                 else (fx["was_team_name"], fx["team_name"], "команды"))
+                if (fx["file"], now) not in renamed:
+                    renamed.add((fx["file"], now))
                     applied[key[0]][key[1:]].append(dict(
-                        row="все", match=f"все матчи с игроком {fx['player']}",
-                        before=fx["was_player"], after=fx["player"], note=fx.get("note", "")))
+                        row="все", match=f"все матчи {who} {now}",
+                        before=was, after=now, note=fx.get("note", "")))
                 continue
             d = g["date"].strftime("%d.%m.%Y") if g["date"] else "—"
             applied[g["comp"]][(g["date"].year, g["date"].month)].append(dict(
